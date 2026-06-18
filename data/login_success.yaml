@@ -1,0 +1,38 @@
+# 公共参数
+case_common:
+  allureEpic: 兔子
+  allureFeature: 登录模块
+  allureStory: 用户登录
+
+login_success_01:
+    host: ${{host}}
+    url: /api/login/index
+    method: POST
+    detail: 正常登录成功
+    headers:
+      User-Agent: "Dalvik/2.1.0 (Linux; U; Android 12; V2366GA Build/55cac2b.0)"
+      Host: wwyd.vip.hnhxzkj.com
+      Content-Type: application/json;charset=UTF-8
+    requestType: json
+    is_run:
+    data:
+      platform: 4
+      phone: '132245677747'
+      sms_code: '1111'
+    dependence_case: False
+    dependence_case_data:
+    assert:
+      code:
+        jsonpath: $.code
+        type: ==
+        value: "00000"
+        AssertType:
+      msg:
+        jsonpath: $.msg
+        type: ==
+        value: ok
+        AssertType:
+    sql:
+    extract:
+      token:
+        jsonpath: $.data.token
