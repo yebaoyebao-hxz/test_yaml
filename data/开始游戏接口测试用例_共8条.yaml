@@ -1,0 +1,186 @@
+case_common:
+  allureEpic: 游戏项目
+  allureFeature: 用户模块
+  allureStory: 开始游戏接口测试
+
+game_start_01:
+  host: https://wwyd.vip.hnhxzkj.com
+  url: /api/user/game_start
+  method: POST
+  detail: 正常开启游戏-type为0
+  headers:
+    Content-Type: application/json;charset=UTF-8
+    requestType: json
+    Authorization: 'Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJ3ZWJtYW4udGlueXdhbi5jbiIsImF1ZCI6IndlYm1hbi50aW55d2FuLmNuIiwiaWF0IjoxNzc4ODM2MTUwLCJuYmYiOjE3Nzg4MzYxNTAsImV4cCI6MjY0MjgzNjE1MCwiZXh0ZW5kIjp7ImlkIjoxMjM3MjAsImFjY2Vzc19leHAiOjg2NDAwMDAwMCwicmVmcmVzaF9leHAiOjg2NDAwMDAwMCwibmFtZSI6bnVsbCwiY2xpZW50IjoiTU9CSUxFIn19.TGZd_Om558V3VwfF8GgAXiS0KlrmNstorvs_bm5YOkw'
+    User-Agent: 'Apifox/1.0.0 (https://apifox.com)'
+  is_run:
+  data:
+    type: 0
+  dependence_case: False
+  dependence_case_data:
+  assert:
+    code:
+      jsonpath: $.code
+      type: ==
+      value: 0
+      AssertType:
+
+    status_code: 200
+game_start_02:
+  host: https://wwyd.vip.hnhxzkj.com
+  url: /api/user/game_start
+  method: POST
+  detail: 缺少type参数
+  headers:
+    Content-Type: application/json;charset=UTF-8
+    requestType: json
+    Authorization: 'Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJ3ZWJtYW4udGlueXdhbi5jbiIsImF1ZCI6IndlYm1hbi50aW55d2FuLmNuIiwiaWF0IjoxNzc4ODM2MTUwLCJuYmYiOjE3Nzg4MzYxNTAsImV4cCI6MjY0MjgzNjE1MCwiZXh0ZW5kIjp7ImlkIjoxMjM3MjAsImFjY2Vzc19leHAiOjg2NDAwMDAwMCwicmVmcmVzaF9leHAiOjg2NDAwMDAwMCwibmFtZSI6bnVsbCwiY2xpZW50IjoiTU9CSUxFIn19.TGZd_Om558V3VwfF8GgAXiS0KlrmNstorvs_bm5YOkw'
+    User-Agent: 'Apifox/1.0.0 (https://apifox.com)'
+  is_run:
+  data: {}
+  dependence_case: False
+  dependence_case_data:
+  assert:
+    code:
+      jsonpath: $.code
+      type: ==
+      value: 500
+      AssertType:
+
+    status_code: 200
+game_start_03:
+  host: https://wwyd.vip.hnhxzkj.com
+  url: /api/user/game_start
+  method: POST
+  detail: type参数为空字符串
+  headers:
+    Content-Type: application/json;charset=UTF-8
+    requestType: json
+    Authorization: 'Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJ3ZWJtYW4udGlueXdhbi5jbiIsImF1ZCI6IndlYm1hbi50aW55d2FuLmNuIiwiaWF0IjoxNzc4ODM2MTUwLCJuYmYiOjE3Nzg4MzYxNTAsImV4cCI6MjY0MjgzNjE1MCwiZXh0ZW5kIjp7ImlkIjoxMjM3MjAsImFjY2Vzc19leHAiOjg2NDAwMDAwMCwicmVmcmVzaF9leHAiOjg2NDAwMDAwMCwibmFtZSI6bnVsbCwiY2xpZW50IjoiTU9CSUxFIn19.TGZd_Om558V3VwfF8GgAXiS0KlrmNstorvs_bm5YOkw'
+    User-Agent: 'Apifox/1.0.0 (https://apifox.com)'
+  is_run:
+  data:
+    type: ''
+  dependence_case: False
+  dependence_case_data:
+  assert:
+    code:
+      jsonpath: $.code
+      type: ==
+      value: 500
+      AssertType:
+
+    status_code: 200
+game_start_04:
+  host: https://wwyd.vip.hnhxzkj.com
+  url: /api/user/game_start
+  method: POST
+  detail: type为负数
+  headers:
+    Content-Type: application/json;charset=UTF-8
+    requestType: json
+    Authorization: 'Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJ3ZWJtYW4udGlueXdhbi5jbiIsImF1ZCI6IndlYm1hbi50aW55d2FuLmNuIiwiaWF0IjoxNzc4ODM2MTUwLCJuYmYiOjE3Nzg4MzYxNTAsImV4cCI6MjY0MjgzNjE1MCwiZXh0ZW5kIjp7ImlkIjoxMjM3MjAsImFjY2Vzc19leHAiOjg2NDAwMDAwMCwicmVmcmVzaF9leHAiOjg2NDAwMDAwMCwibmFtZSI6bnVsbCwiY2xpZW50IjoiTU9CSUxFIn19.TGZd_Om558V3VwfF8GgAXiS0KlrmNstorvs_bm5YOkw'
+    User-Agent: 'Apifox/1.0.0 (https://apifox.com)'
+  is_run:
+  data:
+    type: -1
+  dependence_case: False
+  dependence_case_data:
+  assert:
+    code:
+      jsonpath: $.code
+      type: ==
+      value: 500
+      AssertType:
+
+    status_code: 200
+game_start_05:
+  host: https://wwyd.vip.hnhxzkj.com
+  url: /api/user/game_start
+  method: POST
+  detail: type为极大值
+  headers:
+    Content-Type: application/json;charset=UTF-8
+    requestType: json
+    Authorization: 'Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJ3ZWJtYW4udGlueXdhbi5jbiIsImF1ZCI6IndlYm1hbi50aW55d2FuLmNuIiwiaWF0IjoxNzc4ODM2MTUwLCJuYmYiOjE3Nzg4MzYxNTAsImV4cCI6MjY0MjgzNjE1MCwiZXh0ZW5kIjp7ImlkIjoxMjM3MjAsImFjY2Vzc19leHAiOjg2NDAwMDAwMCwicmVmcmVzaF9leHAiOjg2NDAwMDAwMCwibmFtZSI6bnVsbCwiY2xpZW50IjoiTU9CSUxFIn19.TGZd_Om558V3VwfF8GgAXiS0KlrmNstorvs_bm5YOkw'
+    User-Agent: 'Apifox/1.0.0 (https://apifox.com)'
+  is_run:
+  data:
+    type: 9999999999999999
+  dependence_case: False
+  dependence_case_data:
+  assert:
+    code:
+      jsonpath: $.code
+      type: ==
+      value: 500
+      AssertType:
+
+    status_code: 200
+game_start_06:
+  host: https://wwyd.vip.hnhxzkj.com
+  url: /api/user/game_start
+  method: POST
+  detail: type为字符串
+  headers:
+    Content-Type: application/json;charset=UTF-8
+    requestType: json
+    Authorization: 'Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJ3ZWJtYW4udGlueXdhbi5jbiIsImF1ZCI6IndlYm1hbi50aW55d2FuLmNuIiwiaWF0IjoxNzc4ODM2MTUwLCJuYmYiOjE3Nzg4MzYxNTAsImV4cCI6MjY0MjgzNjE1MCwiZXh0ZW5kIjp7ImlkIjoxMjM3MjAsImFjY2Vzc19leHAiOjg2NDAwMDAwMCwicmVmcmVzaF9leHAiOjg2NDAwMDAwMCwibmFtZSI6bnVsbCwiY2xpZW50IjoiTU9CSUxFIn19.TGZd_Om558V3VwfF8GgAXiS0KlrmNstorvs_bm5YOkw'
+    User-Agent: 'Apifox/1.0.0 (https://apifox.com)'
+  is_run:
+  data:
+    type: 'abc'
+  dependence_case: False
+  dependence_case_data:
+  assert:
+    code:
+      jsonpath: $.code
+      type: ==
+      value: 500
+      AssertType:
+
+    status_code: 200
+game_start_07:
+  host: https://wwyd.vip.hnhxzkj.com
+  url: /api/user/game_start
+  method: POST
+  detail: type为特殊字符
+  headers:
+    Content-Type: application/json;charset=UTF-8
+    requestType: json
+    Authorization: 'Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJ3ZWJtYW4udGlueXdhbi5jbiIsImF1ZCI6IndlYm1hbi50aW55d2FuLmNuIiwiaWF0IjoxNzc4ODM2MTUwLCJuYmYiOjE3Nzg4MzYxNTAsImV4cCI6MjY0MjgzNjE1MCwiZXh0ZW5kIjp7ImlkIjoxMjM3MjAsImFjY2Vzc19leHAiOjg2NDAwMDAwMCwicmVmcmVzaF9leHAiOjg2NDAwMDAwMCwibmFtZSI6bnVsbCwiY2xpZW50IjoiTU9CSUxFIn19.TGZd_Om558V3VwfF8GgAXiS0KlrmNstorvs_bm5YOkw'
+    User-Agent: 'Apifox/1.0.0 (https://apifox.com)'
+  is_run:
+  data:
+    type: '@#￥%'
+  dependence_case: False
+  dependence_case_data:
+  assert:
+    code:
+      jsonpath: $.code
+      type: ==
+      value: 500
+      AssertType:
+
+    status_code: 200
+game_start_08:
+  host: https://wwyd.vip.hnhxzkj.com
+  url: /api/user/game_start
+  method: POST
+  detail: 未携带Authorization头
+  headers:
+    Content-Type: application/json;charset=UTF-8
+    requestType: json
+    User-Agent: 'Apifox/1.0.0 (https://apifox.com)'
+  is_run:
+  data:
+    type: 0
+  dependence_case: False
+  dependence_case_data:
+  assert:
+    code:
+      jsonpath: $.code
+      type: ==
+      value: 401
+      AssertType:
+    status_code: 200

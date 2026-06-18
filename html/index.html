@@ -1,0 +1,1426 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>YAML 测试用例生成器</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: #f0f2f5;
+    color: #333;
+    min-height: 100vh;
+  }
+
+  /* ── 顶部导航 ── */
+  .header {
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    color: #fff;
+    padding: 10px 24px;
+    display: flex; align-items: center; gap: 10px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.15);
+  }
+  .header .logo { font-size: 24px; }
+  .header h1 { font-size: 20px; font-weight: 600; }
+  .header .sub { color: #8892b0; font-size: 13px; margin-left: auto; }
+
+  /* ── 顶层页签 ── */
+  .page-tabs {
+    background: #1a1a2e; padding: 0 24px;
+    display: flex; gap: 0; border-bottom: 1px solid #333;
+  }
+  .page-tab {
+    padding: 10px 28px; border: none; background: transparent; cursor: pointer;
+    font-size: 14px; font-weight: 500; color: #8892b0;
+    border-bottom: 2px solid transparent; transition: all .2s;
+    position: relative; top: 1px;
+  }
+  .page-tab:hover { color: #cdd6f4; }
+  .page-tab.active { color: #fff; border-bottom-color: #1a73e8; }
+  .view-section { display: block; }
+  .view-section.hidden { display: none; }
+
+  /* ── 运行记录视图 ── */
+  .records-wrap { max-width: 1400px; margin: 0 auto; padding: 16px 20px; }
+  .records-toolbar {
+    background: #fff; border-radius: 10px 10px 0 0; padding: 12px 16px;
+    display: flex; align-items: center; gap: 10px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.08);
+  }
+  .records-toolbar input {
+    flex: 1; max-width: 300px; padding: 6px 10px;
+    border: 1px solid #d9d9d9; border-radius: 6px; font-size: 13px;
+  }
+  .records-toolbar input:focus { outline: none; border-color: #1a73e8; }
+  .records-toolbar .count { color: #888; font-size: 13px; white-space: nowrap; }
+  .records-table {
+    width: 100%; border-collapse: collapse; background: #fff;
+    border-radius: 0 0 10px 10px; overflow: hidden;
+    box-shadow: 0 1px 4px rgba(0,0,0,.08);
+  }
+  .records-table th {
+    background: #f5f5f5; color: #333; padding: 10px 14px;
+    text-align: left; font-size: 13px; font-weight: 600;
+    border-bottom: 2px solid #e8e8e8;
+  }
+  .records-table td {
+    padding: 8px 14px; border-bottom: 1px solid #f0f0f0;
+    font-size: 13px; vertical-align: top;
+  }
+  .records-table tr:hover { background: #fafafa; }
+  .records-table .cell-wrap { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .records-table .cell-summary { max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .records-table .cell-actions { white-space: nowrap; }
+  .records-table .cell-actions button {
+    padding: 3px 10px; border: 1px solid #d9d9d9; border-radius: 4px;
+    background: #fff; cursor: pointer; font-size: 12px; color: #666; margin-right: 4px;
+  }
+  .records-table .cell-actions button:hover { border-color: #1a73e8; color: #1a73e8; }
+  .tag-exec-ok { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; background: #e6f7e6; color: #52c41a; }
+  .tag-exec-no { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; background: #fff1f0; color: #ff4d4f; }
+  .records-empty { text-align: center; padding: 40px; color: #999; font-size: 14px; }
+
+  /* ── 性能测试视图 ── */
+  .perf-wrap { max-width: 1400px; margin: 0 auto; padding: 16px 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 900px) { .perf-wrap { grid-template-columns: 1fr; } }
+  .perf-config-card { grid-row: 1 / 3; }
+  .perf-config-card .card-body { gap: 10px; overflow-y: auto; }
+  .perf-row { display: flex; align-items: center; gap: 8px; }
+  .perf-row label { font-size: 13px; color: #666; min-width: 56px; flex-shrink: 0; }
+  .perf-row input, .perf-row select { flex: 1; padding: 6px 10px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 13px; }
+  .perf-row input:focus, .perf-row select:focus { outline: none; border-color: #1a73e8; }
+  .perf-header-list { display: flex; flex-direction: column; gap: 4px; max-height: 120px; overflow-y: auto; }
+  .perf-header-item { display: flex; align-items: center; gap: 6px; }
+  .perf-header-item input { flex: 1; padding: 4px 8px; border: 1px solid #d9d9d9; border-radius: 4px; font-size: 12px; }
+  .perf-header-item input:focus { outline: none; border-color: #1a73e8; }
+  .perf-header-item .btn-remove { padding: 3px 8px; border: 1px solid #d9d9d9; border-radius: 4px; background: #fff; cursor: pointer; font-size: 14px; color: #ff4d4f; line-height: 1; }
+  .perf-header-item .btn-remove:hover { background: #fff1f0; }
+  .perf-slider-row { display: flex; align-items: center; gap: 8px; }
+  .perf-slider-row label { font-size: 13px; color: #666; min-width: 56px; flex-shrink: 0; }
+  .perf-slider-row .slider-wrap { display: flex; align-items: center; gap: 10px; flex: 1; }
+  .perf-slider-row input[type=range] { flex: 1; accent-color: #1a73e8; }
+  .perf-slider-row .val { min-width: 40px; text-align: right; font-weight: 600; font-size: 14px; color: #1a73e8; }
+  .perf-body-input { width: 100%; min-height: 80px; border: 1px solid #d9d9d9; border-radius: 6px; padding: 8px 10px; font-size: 13px; font-family: "SF Mono","Consolas",monospace; resize: vertical; }
+  .perf-body-input:focus { outline: none; border-color: #1a73e8; }
+  .perf-btn-row { display: flex; gap: 10px; align-items: center; margin-top: 4px; }
+  .btn-perf-run { background: linear-gradient(135deg, #e8433c, #ff6b6b); color: #fff; border: none; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; padding: 12px 32px; flex: 1; transition: all .2s; }
+  .btn-perf-run:hover { background: linear-gradient(135deg, #c0392b, #e8433c); }
+  .btn-perf-run:disabled { background: #f5a3a3; cursor: not-allowed; }
+  .btn-perf-stop { background: #fff; color: #e8433c; border: 1px solid #e8433c; border-radius: 8px; font-size: 14px; cursor: pointer; padding: 12px 24px; display: none; }
+  .btn-perf-stop:hover { background: #fff1f0; }
+  .perf-metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .perf-metric-card { background: #f8f9fa; border-radius: 8px; padding: 14px; text-align: center; }
+  .perf-metric-card .label { font-size: 12px; color: #888; margin-bottom: 4px; }
+  .perf-metric-card .value { font-size: 22px; font-weight: 700; color: #333; }
+  .perf-metric-card .unit { font-size: 12px; color: #999; }
+  .perf-metric-card.ok .value { color: #52c41a; }
+  .perf-metric-card.err .value { color: #ff4d4f; }
+  .perf-metric-card.warn .value { color: #fa8c16; }
+  .perf-latency-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+  .perf-latency-table td { padding: 6px 10px; border-bottom: 1px solid #f0f0f0; font-size: 13px; }
+  .perf-latency-table td:first-child { color: #888; width: 60px; }
+  .perf-latency-table td:last-child { text-align: right; font-weight: 500; font-family: "SF Mono","Consolas",monospace; }
+  .perf-progress { width: 100%; height: 6px; background: #eee; border-radius: 3px; overflow: hidden; margin-top: 6px; }
+  .perf-progress-bar { height: 100%; background: linear-gradient(90deg, #1a73e8, #52c41a); border-radius: 3px; transition: width .3s; width: 0%; }
+
+  /* ── 主布局 ── */
+  .container {
+    max-width: 1400px;
+    margin: 16px auto;
+    padding: 0 20px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto 1fr;
+    gap: 16px;
+    height: calc(100vh - 104px);
+  }
+  .container > .card { min-height: 0; }
+  @media (max-width: 900px) {
+    .container { grid-template-columns: 1fr; height: auto; }
+  }
+
+  /* ── 卡片 ── */
+  .card {
+    background: #fff;
+    border-radius: 10px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.08);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .card-header {
+    padding: 10px 16px;
+    border-bottom: 1px solid #eee;
+    font-weight: 600;
+    font-size: 14px;
+    display: flex; align-items: center; gap: 8px;
+    flex-shrink: 0;
+  }
+  .card-body { padding: 12px 16px; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+
+  /* ── 输入区域 ── */
+  .input-card { grid-row: 1 / 3; }
+
+  /* 类型切换标签 */
+  .tabs { display: flex; gap: 0; margin-bottom: 16px; border-radius: 8px; overflow: hidden; border: 1px solid #d9d9d9; }
+  .tab-btn {
+    flex: 1; padding: 8px 16px; border: none; background: #fafafa; cursor: pointer;
+    font-size: 14px; color: #666; transition: all .2s;
+  }
+  .tab-btn.active { background: #1a1a2e; color: #fff; }
+  .tab-btn:not(:last-child) { border-right: 1px solid #d9d9d9; }
+
+  .input-group { flex: 1; display: flex; flex-direction: column; gap: 12px; }
+  .input-group.hidden { display: none; }
+
+  textarea {
+    width: 100%; flex: 1; min-height: 280px;
+    border: 1px solid #d9d9d9; border-radius: 8px; padding: 12px;
+    font-family: "SF Mono", "Fira Code", "Consolas", monospace;
+    font-size: 13px; line-height: 1.6; resize: vertical;
+    transition: border-color .2s;
+  }
+  textarea:focus { outline: none; border-color: #1a73e8; box-shadow: 0 0 0 2px rgba(26,115,232,.1); }
+
+  .upload-zone {
+    flex: 1; min-height: 280px;
+    border: 2px dashed #d9d9d9; border-radius: 8px;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    cursor: pointer; transition: all .2s;
+    position: relative; overflow: hidden;
+  }
+  .upload-zone:hover, .upload-zone.drag-over { border-color: #1a73e8; background: #f0f5ff; }
+  .upload-zone .icon { font-size: 48px; margin-bottom: 12px; }
+  .upload-zone .hint { color: #999; font-size: 14px; }
+  .upload-zone img { max-width: 100%; max-height: 260px; border-radius: 6px; display: none; }
+  .upload-zone.has-image .icon, .upload-zone.has-image .hint { display: none; }
+  .upload-zone.has-image img { display: block; }
+
+  .btn-row { display: flex; gap: 10px; margin-top: 8px; }
+  .btn {
+    padding: 10px 24px; border: none; border-radius: 8px; font-size: 14px; font-weight: 500;
+    cursor: pointer; transition: all .2s; display: inline-flex; align-items: center; gap: 6px;
+  }
+  .btn-primary { background: #1a73e8; color: #fff; flex: 1; justify-content: center; }
+  .btn-primary:hover { background: #1557b0; }
+    .btn-primary:disabled { background: #93b8f0; cursor: not-allowed; }
+  .btn-outline { background: #fff; color: #666; border: 1px solid #d9d9d9; }
+  .btn-outline:hover { background: #f5f5f5; }
+
+  /* 标准化断言开关 */
+  .normalize-toggle { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; }
+  .normalize-toggle input { display: none; }
+  .toggle-track {
+    width: 40px; height: 22px;
+    background: #ccc; border-radius: 11px;
+    position: relative; transition: background .3s;
+  }
+  .toggle-track::after {
+    content: ''; position: absolute; top: 2px; left: 2px;
+    width: 18px; height: 18px; border-radius: 50%;
+    background: #fff; transition: left .3s;
+    box-shadow: 0 1px 3px rgba(0,0,0,.2);
+  }
+  .normalize-toggle input:checked + .toggle-track { background: #fa8c16; }
+  .normalize-toggle input:checked + .toggle-track::after { left: 20px; }
+  .toggle-label { font-size: 13px; color: #666; white-space: nowrap; }
+
+  .spinner { display: none; width: 16px; height: 16px; border: 2px solid #fff; border-top-color: transparent; border-radius: 50%; animation: spin .6s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── 输出区域 ── */
+  .output-header { display: flex; align-items: center; gap: 8px; }
+  .badge { padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 500; }
+  .badge-success { background: #e6f7e6; color: #52c41a; }
+  .badge-error { background: #fff1f0; color: #ff4d4f; }
+  .badge-info { background: #e6f7ff; color: #1890ff; }
+
+  .yaml-scroll {
+    flex: 1; min-height: 0;
+    display: flex; flex-direction: column;
+    padding: 0 16px 8px;
+  }
+  .yaml-scroll .yaml-output {
+    display: block; width: 100%; flex: 1;
+    background: #1e1e2e; color: #cdd6f4;
+    border: 2px solid transparent; border-radius: 8px; padding: 14px;
+    font-family: "SF Mono", "Fira Code", "Consolas", monospace;
+    font-size: 13px; line-height: 1.7; tab-size: 2;
+    resize: none; outline: none;
+    transition: border-color .25s;
+  }
+  .yaml-output:read-only { cursor: default; border-color: transparent; }
+  .yaml-output:not(:read-only) { border-color: #89b4fa; cursor: text; }
+  .yaml-output::-webkit-resizer { background: #89b4fa; }
+  .yaml-output::placeholder { color: #585b70; }
+  .yaml-output .key { color: #89b4fa; }
+  .yaml-output .str { color: #a6e3a1; }
+  .yaml-output .num { color: #fab387; }
+  .yaml-output .comment { color: #585b70; font-style: italic; }
+
+  .output-actions { display: flex; gap: 8px; padding: 8px 16px 12px; flex-shrink: 0; flex-wrap: wrap; }
+  .btn-execute {
+    background: linear-gradient(135deg, #52c41a, #73d13d); color: #fff; border: none;
+    border-radius: 8px; font-size: 14px; font-weight: 500;
+    cursor: pointer; transition: all .2s; display: inline-flex; align-items: center; gap: 6px;
+    padding: 10px 20px; margin-left: auto;
+  }
+  .btn-execute:hover { background: linear-gradient(135deg, #389e0d, #52c41a); }
+  .btn-execute:disabled { background: #b7eb8f; cursor: not-allowed; }
+  .btn-ai-assert {
+    background: linear-gradient(135deg, #722ed1, #9254de); color: #fff; border: none;
+    border-radius: 8px; font-size: 14px; font-weight: 500;
+    cursor: pointer; transition: all .2s; display: inline-flex; align-items: center; gap: 6px;
+    padding: 10px 20px;
+  }
+  .btn-ai-assert:hover { background: linear-gradient(135deg, #531dab, #722ed1); }
+  .btn-ai-assert:disabled { background: #d3adf7; cursor: not-allowed; }
+  .toast {
+    position: fixed; top: 20px; right: 20px; z-index: 999;
+    padding: 10px 20px; border-radius: 8px; font-size: 14px;
+    opacity: 0; transform: translateY(-10px); transition: all .3s;
+  }
+  .toast.show { opacity: 1; transform: translateY(0); }
+  .toast-ok { background: #52c41a; color: #fff; }
+  .toast-err { background: #ff4d4f; color: #fff; }
+
+  /* ── 运行日志控制台 ── */
+  .console-panel {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 1000;
+    display: flex; flex-direction: column;
+    background: #1a1a2e; border-top: 2px solid #333;
+    max-height: 40vh; min-height: 120px;
+    box-shadow: 0 -4px 20px rgba(0,0,0,.3);
+  }
+  .console-header {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 16px; color: #a0a0b8; font-size: 13px; font-weight: 600;
+    background: #16162a; border-bottom: 1px solid #333;
+    flex-shrink: 0; cursor: ns-resize;
+    user-select: none;
+  }
+  .console-btn {
+    padding: 4px 10px !important; font-size: 12px !important;
+    background: #2a2a40 !important; color: #a0a0b8 !important;
+    border-color: #444 !important;
+  }
+  .console-btn:hover { background: #3a3a50 !important; color: #fff !important; }
+  .console-body {
+    flex: 1; overflow-y: auto; padding: 12px 16px;
+    font-family: "SF Mono", "Fira Code", "Consolas", monospace;
+    font-size: 12px; line-height: 1.6; color: #cdd6f4;
+    white-space: pre-wrap; word-break: break-all;
+  }
+  .console-body::-webkit-scrollbar { width: 8px; }
+  .console-body::-webkit-scrollbar-track { background: #1a1a2e; }
+  .console-body::-webkit-scrollbar-thumb { background: #444; border-radius: 4px; }
+  .console-body .c-ok { color: #52c41a; }
+  .console-body .c-err { color: #ff4d4f; }
+  .console-body .c-warn { color: #faad14; }
+  .console-body .c-info { color: #1890ff; }
+  .console-body .c-dim { color: #888; }
+  .console-body .c-hr { border: none; border-top: 1px solid #333; margin: 8px 0; }
+
+  /* 模型选择 */
+  .model-tag { font-size: 12px; color: #888; margin-left: auto; }
+
+  /* 数据库配置栏 */
+  .db-bar {
+    max-width: 1400px; margin: 0 auto 0; padding: 0 24px;
+    display: flex; align-items: center; gap: 10px; font-size: 13px; color: #666;
+  }
+  .db-bar input {
+    flex: 1; max-width: 400px; padding: 6px 10px; border: 1px solid #d9d9d9;
+    border-radius: 6px; font-size: 13px; font-family: monospace;
+  }
+  .db-bar input:focus { outline: none; border-color: #1a73e8; }
+  .db-bar .db-count { color: #52c41a; font-weight: 500; white-space: nowrap; }
+  .db-bar .btn { padding: 6px 14px; font-size: 12px; }
+
+  /* ── 图片附件条 ── */
+  .attach-strip {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    padding: 8px 0; min-height: 0;
+  }
+  .attach-thumb {
+    position: relative;
+    width: 64px; height: 64px;
+    border: 1px solid #d9d9d9; border-radius: 6px;
+    overflow: hidden; cursor: pointer;
+    background: #fafafa; flex-shrink: 0;
+    transition: border-color .2s;
+  }
+  .attach-thumb:hover { border-color: #ff4d4f; }
+  .attach-thumb img {
+    width: 100%; height: 100%; object-fit: cover;
+  }
+  .attach-thumb .del-badge {
+    position: absolute; top: 2px; right: 2px;
+    width: 18px; height: 18px; border-radius: 50%;
+    background: rgba(0,0,0,.5); color: #fff;
+    font-size: 12px; line-height: 18px; text-align: center;
+    cursor: pointer; display: none;
+  }
+  .attach-thumb:hover .del-badge { display: block; }
+  .attach-add {
+    width: 64px; height: 64px;
+    border: 2px dashed #d9d9d9; border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; font-size: 24px; color: #999;
+    flex-shrink: 0; transition: all .2s;
+  }
+  .attach-add:hover { border-color: #1a73e8; color: #1a73e8; background: #f0f5ff; }
+  .attach-hint {
+    font-size: 12px; color: #999;
+    align-self: center; margin-left: 4px;
+  }
+
+</style>
+</head>
+<body>
+
+<div class="header">
+  <span class="logo">🐇</span>
+  <h1>YAML 测试用例生成器</h1>
+  <span class="sub">AI 驱动 · DeepSeek / 通义千问</span>
+</div>
+
+<div class="page-tabs">
+  <button class="page-tab active" data-page="generate" onclick="switchPage('generate')">⚡ 接口用例生成</button>
+  <button class="page-tab" data-page="records" onclick="switchPage('records')">📜 运行记录</button>
+  <button class="page-tab" data-page="perf" onclick="switchPage('perf')">🚀 性能测试</button>
+</div>
+
+<div id="view-generate" class="view-section">
+<div class="db-bar">
+  <span>🗄️ 数据库:</span>
+  <input id="db-path" placeholder="E:\\yebao\\test_yaml\\history.db" title="SQLite 数据库路径，留空使用默认">
+  <button class="btn btn-outline" onclick="setDbPath()">💾 保存</button>
+  <span class="db-count" id="db-count"></span>
+  <span style="flex:1"></span>
+</div>
+
+<div class="container">
+  <!-- 左半：输入区 -->
+  <div class="card input-card">
+    <div class="card-header">📥 输入</div>
+    <div class="card-body">
+      <div class="tabs">
+        <button class="tab-btn active" data-tab="curl">curl 命令</button>
+        <button class="tab-btn" data-tab="text">文本描述</button>
+        <button class="tab-btn" data-tab="image">📸 截图识别</button>
+      </div>
+
+      <!-- curl 输入 -->
+      <div id="curl-group" class="input-group">
+        <textarea id="curl-input" placeholder="粘贴 curl 命令，如：&#10;curl 'https://api.example.com/login' \&#10;  -H 'Content-Type: application/json' \&#10;  --data-raw '{"phone":"138****0001","code":"1111"}'"></textarea>
+      </div>
+
+      <!-- 文本输入 -->
+      <div id="text-group" class="input-group hidden">
+        <textarea id="text-input" placeholder="描述接口信息，如：&#10;POST /api/user/login&#10;参数: mobile(string,必填), code(string,必填), invite_code(string,选填)&#10;响应: {code, msg, data: {token, userId}}&#10;需要覆盖场景：正常登录、错误验证码、参数缺失、token提取"></textarea>
+      </div>
+
+      <!-- 图片输入 -->
+      <div id="image-group" class="input-group hidden">
+        <div class="upload-zone" id="upload-zone">
+          <span class="icon">🖼️</span>
+          <span class="hint">点击上传或拖拽截图到此处<br><small>支持 .png .jpg .webp</small></span>
+          <img id="preview-img" alt="preview">
+        </div>
+        <input type="file" id="file-input" accept="image/*" style="display:none">
+      </div>
+
+
+      <!-- 通用截图附件（所有输入模式共用） -->
+      <div style="padding:0;margin-top:4px;">
+        <div style="font-size:12px;color:#888;margin-bottom:4px;">📎 附加截图（粘贴 / 拖拽 / 点击 +号）</div>
+        <div class="attach-strip" id="attach-strip">
+          <div class="attach-add" id="attach-add-btn" title="添加截图">+</div>
+          <span class="attach-hint" id="attach-hint">Ctrl+V 粘贴，或拖拽图片到此处</span>
+        </div>
+        <input type="file" id="attach-file-input" accept="image/*" multiple style="display:none">
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-outline" onclick="clearAll()">清空</button>
+        <button class="btn btn-primary" id="submit-btn" onclick="doGenerate()">
+          <span class="spinner" id="spinner"></span>
+          <span id="submit-text">⚡ 生成 YAML</span>
+        </button>
+        <label class="normalize-toggle" title="开启后：HTTP 200 + 仅判断 code 返回值">
+          <input type="checkbox" id="normalize-switch" onchange="toggleNormalize()">
+          <span class="toggle-track"></span>
+          <span class="toggle-label">标准化</span>
+        </label>
+      </div>
+    </div>
+  </div>
+
+  <!-- 右上半：摘要 -->
+  <div class="card" style="max-height:120px;">
+    <div class="card-header">
+      📋 生成摘要
+      <span class="model-tag" id="model-tag"></span>
+      <button class="btn btn-outline" style="margin-left:auto;padding:3px 10px;font-size:11px;" onclick="toggleHistory()">📜 历史 (<span id="history-count">0</span>)</button>
+    </div>
+    <div class="card-body" style="padding:6px 16px 4px;">
+      <div id="summary-box" style="color:#888; font-size:13px; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">等待生成...</div>
+    </div>
+  </div>
+
+  <!-- 右下：YAML 输出 -->
+  <div class="card yaml-card">
+    <div class="card-header output-header">
+      📄 YAML 输出
+      <span id="status-badge"></span>
+      <button class="btn btn-outline" style="margin-left:auto;padding:4px 12px;font-size:12px;" onclick="toggleRaw()">查看原文</button>
+    </div>
+    <div class="yaml-scroll">
+      <textarea class="yaml-output" id="yaml-output" placeholder="等待生成..." readonly spellcheck="false"></textarea>
+    </div>
+    <div class="output-actions">
+      <button class="btn btn-execute" id="execute-btn" onclick="doExecute()">
+        <span class="spinner" id="exec-spinner"></span>
+        🚀 执行用例
+      </button>
+      <button class="btn btn-ai-assert" id="ai-assert-btn" onclick="doAiAssert()">
+        <span class="spinner" id="ai-spinner"></span>
+        🤖 AI断言
+      </button>
+      <span style="flex:1"></span>
+      <button class="btn btn-outline" onclick="copyYaml()">📋 复制 YAML</button>
+      <button class="btn btn-primary" onclick="downloadYaml()" style="flex:none">💾 下载 .yaml</button>
+      <button class="btn btn-outline" onclick="downloadRawYaml()">📄 下载原文</button>
+    </div>
+  </div>
+</div>
+
+</div><!-- /view-generate -->
+
+<div id="view-records" class="view-section hidden">
+<div class="records-wrap">
+  <div class="records-toolbar">
+    <span style="font-weight:600;">🗄️ 运行记录</span>
+    <input id="records-search" placeholder="搜索文件名或摘要..." oninput="filterRecords()">
+    <span class="count" id="records-count"></span>
+    <button class="btn btn-outline" style="padding:4px 10px;font-size:12px;" onclick="loadRecords()">🔄 刷新</button>
+  </div>
+  <div id="records-table-wrap">
+    <div class="records-empty" id="records-empty">加载中...</div>
+    <table class="records-table" id="records-table" style="display:none;">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>文件名</th>
+          <th>输入类型</th>
+          <th>摘要</th>
+          <th>模型</th>
+          <th>执行状态</th>
+          <th>时间</th>
+        </tr>
+      </thead>
+      <tbody id="records-tbody"></tbody>
+    </table>
+  </div>
+</div>
+</div>
+
+<div id="view-perf" class="view-section hidden">
+<div class="perf-wrap">
+  <!-- 配置区 -->
+  <div class="card perf-config-card">
+    <div class="card-header">⚙️ 压测配置</div>
+    <div class="card-body">
+      <div class="perf-row">
+        <label>URL</label>
+        <input id="perf-url" placeholder="https://api.example.com/endpoint">
+      </div>
+      <div class="perf-row">
+        <label>方法</label>
+        <select id="perf-method">
+          <option>GET</option><option>POST</option><option>PUT</option><option>DELETE</option><option>PATCH</option>
+        </select>
+      </div>
+      <div style="font-size:12px;color:#888;margin-top:2px;">Headers</div>
+      <div class="perf-header-list" id="perf-headers">
+        <div class="perf-header-item">
+          <input placeholder="Key" value="Content-Type">
+          <input placeholder="Value" value="application/json">
+          <button class="btn-remove" onclick="removePerfHeader(this)">×</button>
+        </div>
+      </div>
+      <button class="btn btn-outline" style="padding:4px 10px;font-size:12px;align-self:flex-start;" onclick="addPerfHeader()">+ 添加 Header</button>
+      <div style="font-size:12px;color:#888;">Body（POST/PUT/PATCH 时使用）</div>
+      <textarea class="perf-body-input" id="perf-body" placeholder='{"key": "value"}'></textarea>
+      <div class="perf-slider-row">
+        <label>并发数</label>
+        <div class="slider-wrap">
+          <input type="range" id="perf-concurrency" min="1" max="50" value="5" oninput="document.getElementById('perf-concurrency-val').textContent=this.value">
+          <span class="val" id="perf-concurrency-val">5</span>
+        </div>
+      </div>
+      <div class="perf-slider-row">
+        <label>总请求</label>
+        <div class="slider-wrap">
+          <input type="range" id="perf-total" min="10" max="500" value="50" step="10" oninput="document.getElementById('perf-total-val').textContent=this.value">
+          <span class="val" id="perf-total-val">50</span>
+        </div>
+      </div>
+      <div class="perf-btn-row">
+        <button class="btn-perf-run" id="perf-run-btn" onclick="doPerfTest()">
+          <span class="spinner" id="perf-spinner"></span>
+          🚀 开始压测
+        </button>
+        <button class="btn-perf-stop" id="perf-stop-btn" onclick="stopPerfTest()">⏹ 停止</button>
+      </div>
+      <div class="perf-progress" id="perf-progress" style="display:none;">
+        <div class="perf-progress-bar" id="perf-progress-bar"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 结果区 -->
+  <div class="card">
+    <div class="card-header">📊 实时指标 <span id="perf-status" style="font-size:12px;color:#888;margin-left:8px;"></span></div>
+    <div class="card-body">
+      <div class="perf-metrics" id="perf-metrics">
+        <div class="perf-metric-card"><div class="label">总请求</div><div class="value" id="perf-total-req">-</div></div>
+        <div class="perf-metric-card ok"><div class="label">成功</div><div class="value" id="perf-ok">-</div></div>
+        <div class="perf-metric-card err"><div class="label">失败</div><div class="value" id="perf-err">-</div></div>
+        <div class="perf-metric-card"><div class="label">TPS</div><div class="value" id="perf-tps">-<span class="unit"> req/s</span></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">⏱ 延迟分布</div>
+    <div class="card-body">
+      <table class="perf-latency-table">
+        <tr><td>平均</td><td id="perf-avg">- ms</td></tr>
+        <tr><td>P50</td><td id="perf-p50">- ms</td></tr>
+        <tr><td>P90</td><td id="perf-p90">- ms</td></tr>
+        <tr><td>P95</td><td id="perf-p95">- ms</td></tr>
+        <tr><td>P99</td><td id="perf-p99">- ms</td></tr>
+        <tr><td>最小</td><td id="perf-min">- ms</td></tr>
+        <tr><td>最大</td><td id="perf-max">- ms</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ── 状态 ──
+let activeTab = 'curl';
+let imageBase64 = null;
+let attachedImages = [];
+let currentResult = { summary: '', yaml: '', yaml_body: '', raw: '', model: '' };
+let history = [];
+let rawMode = false;
+let normalizeAsserts = false;
+
+function toggleNormalize() {
+  normalizeAsserts = document.getElementById('normalize-switch').checked;
+}
+
+// ── 标签切换 ──
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    activeTab = btn.dataset.tab;
+    ['curl','text','image'].forEach(t => {
+      const el = document.getElementById(t + '-group');
+      if (el) el.classList.toggle('hidden', t !== activeTab);
+    });
+  });
+});
+
+// ── 图片上传 ──
+const uploadZone = document.getElementById('upload-zone');
+const fileInput = document.getElementById('file-input');
+const previewImg = document.getElementById('preview-img');
+
+uploadZone.addEventListener('click', () => fileInput.click());
+uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
+uploadZone.addEventListener('drop', e => {
+  e.preventDefault(); uploadZone.classList.remove('drag-over');
+  handleFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', e => { if (e.target.files[0]) handleFile(e.target.files[0]); });
+
+function handleFile(file) {
+  if (!file || !file.type.startsWith('image/')) return showToast('请选择图片文件', 'err');
+  const reader = new FileReader();
+  reader.onload = () => {
+    imageBase64 = reader.result;
+    previewImg.src = reader.result;
+    uploadZone.classList.add('has-image');
+    addAttachedImageByData(reader.result);
+  };
+  reader.readAsDataURL(file);
+}
+
+// ── 通用截图附件管理 ──
+const attachStrip = document.getElementById('attach-strip');
+const attachAddBtn = document.getElementById('attach-add-btn');
+const attachHint = document.getElementById('attach-hint');
+const attachFileInput = document.getElementById('attach-file-input');
+
+attachAddBtn.addEventListener('click', () => attachFileInput.click());
+attachFileInput.addEventListener('change', e => {
+  [...e.target.files].forEach(f => addAttachedImage(f));
+  attachFileInput.value = '';
+});
+
+// 图片tab的上传也走统一附件
+const origHandleFile = handleFile;
+handleFile = function(file) {
+  if (!file || !file.type.startsWith('image/')) return showToast('请选择图片文件', 'err');
+  const reader = new FileReader();
+  reader.onload = () => {
+    imageBase64 = reader.result;
+    previewImg.src = reader.result;
+    uploadZone.classList.add('has-image');
+    // 同时添加到通用附件
+    addAttachedImageByData(reader.result);
+  };
+  reader.readAsDataURL(file);
+};
+
+function addAttachedImage(file) {
+  const reader = new FileReader();
+  reader.onload = () => addAttachedImageByData(reader.result);
+  reader.readAsDataURL(file);
+}
+
+function addAttachedImageByData(dataUrl) {
+  if (attachedImages.includes(dataUrl)) return;
+  attachedImages.push(dataUrl);
+  renderAttachedImages();
+}
+
+function removeAttachedImage(idx) {
+  attachedImages.splice(idx, 1);
+  // 如果删除的是当前图片tab预览，同步清理
+  if (imageBase64 && !attachedImages.includes(imageBase64)) {
+    imageBase64 = null;
+    previewImg.src = '';
+    uploadZone.classList.remove('has-image');
+  }
+  renderAttachedImages();
+}
+
+function renderAttachedImages() {
+  attachStrip.innerHTML = '';
+  attachedImages.forEach((dataUrl, idx) => {
+    const thumb = document.createElement('div');
+    thumb.className = 'attach-thumb';
+    thumb.innerHTML = `<img src="${dataUrl}" alt="screenshot ${idx+1}"><div class="del-badge" data-idx="${idx}">&times;</div>`;
+    thumb.querySelector('.del-badge').addEventListener('click', (e) => {
+      e.stopPropagation();
+      removeAttachedImage(idx);
+    });
+    thumb.addEventListener('click', () => {
+      // 点击预览大图
+      const w = window.open('', '_blank');
+      w.document.write(`<html><body style="margin:0;display:flex;align-items:center;justify-content:center;background:#000;min-height:100vh;"><img src="${dataUrl}" style="max-width:100%;max-height:100vh;"></body></html>`);
+    });
+    attachStrip.appendChild(thumb);
+  });
+  attachStrip.appendChild(attachAddBtn);
+  attachStrip.appendChild(attachHint);
+  attachHint.style.display = attachedImages.length === 0 ? '' : 'none';
+}
+
+// 粘贴事件：支持 Ctrl+V 粘贴图片
+document.addEventListener('paste', (e) => {
+  const items = e.clipboardData?.items;
+  if (!items) return;
+  for (const item of items) {
+    if (item.type.startsWith('image/')) {
+      e.preventDefault();
+      const blob = item.getAsFile();
+      const reader = new FileReader();
+      reader.onload = () => addAttachedImageByData(reader.result);
+      reader.readAsDataURL(blob);
+      break; // 一次只处理一张
+    }
+  }
+});
+
+// 通用拖拽上传（input-card区域）
+document.querySelector('.input-card').addEventListener('dragover', e => {
+  e.preventDefault();
+  attachStrip.style.background = '#f0f5ff';
+});
+document.querySelector('.input-card').addEventListener('dragleave', () => {
+  attachStrip.style.background = '';
+});
+document.querySelector('.input-card').addEventListener('drop', e => {
+  e.preventDefault();
+  attachStrip.style.background = '';
+  [...e.dataTransfer.files].forEach(f => {
+    if (f.type.startsWith('image/')) addAttachedImage(f);
+  });
+});
+
+
+// ── 核心调用 ──
+async function doGenerate() {
+  const btn = document.getElementById('submit-btn');
+  const spinner = document.getElementById('spinner');
+  const submitText = document.getElementById('submit-text');
+  btn.disabled = true;
+  spinner.style.display = 'inline-block';
+  submitText.textContent = 'AI 生成中...';
+
+  let type, content;
+  if (activeTab === 'curl') {
+    type = 'curl';
+    content = document.getElementById('curl-input').value.trim();
+  } else if (activeTab === 'text') {
+    type = 'text';
+    content = document.getElementById('text-input').value.trim();
+  } else {
+    type = 'image';
+    content = imageBase64 || '';
+  }
+
+  // 合并通用附件中的截图
+  const allImages = [...attachedImages];
+  if (activeTab === 'image' && imageBase64 && !allImages.includes(imageBase64)) {
+    allImages.unshift(imageBase64);
+  }
+
+  if (!content && allImages.length === 0) {
+    showToast('请输入内容或附加截图', 'err');
+    resetBtn(); return;
+  }
+
+  // 如果只传了图片没传文本，自动切到 image 模式
+  if (!content && allImages.length > 0) {
+    type = 'image';
+    content = allImages[0] || '';
+  }
+
+  try {
+    const resp = await fetch('/api/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type,
+        content,
+        images: allImages.length > 0 ? allImages : undefined,
+        normalize_asserts: normalizeAsserts
+      }),
+    });
+    const data = await resp.json();
+
+    currentResult = {
+      summary: data.summary || '',
+      yaml: data.yaml_body || data.yaml || '',
+      raw: data.yaml || '',
+      model: data.model || '',
+    };
+
+    // 显示摘要
+    document.getElementById('summary-box').textContent = data.summary || '(无摘要)';
+    document.getElementById('model-tag').textContent = data.model || '';
+
+    // 显示 YAML
+    const yamlBox = document.getElementById('yaml-output');
+    const statusBadge = document.getElementById('status-badge');
+
+    if (data.success) {
+      yamlBox.value = rawMode ? (data.yaml || '') : (data.yaml_body || '');
+      yamlBox.readOnly = false;
+      statusBadge.innerHTML = '<span class="badge badge-success">✓ 生成成功</span>';
+    } else {
+      yamlBox.value = data.error || '未知错误';
+      yamlBox.readOnly = true;
+      statusBadge.innerHTML = '<span class="badge badge-error">✗ 生成失败</span>';
+    }
+
+    // 写入历史
+    addHistory(currentResult);
+  } catch (e) {
+    document.getElementById('yaml-output').value = '网络错误: ' + e.message;
+    document.getElementById('status-badge').innerHTML = '<span class="badge badge-error">✗ 网络错误</span>';
+  } finally {
+    resetBtn();
+  }
+}
+
+function resetBtn() {
+  const btn = document.getElementById('submit-btn');
+  const spinner = document.getElementById('spinner');
+  const submitText = document.getElementById('submit-text');
+  btn.disabled = false;
+  spinner.style.display = 'none';
+  submitText.textContent = '⚡ 生成 YAML';
+}
+
+// ── 工具函数 ──
+function copyYaml() {
+  const text = currentResult.yaml || currentResult.raw || '';
+  copyToClipboard(text, 'YAML 已复制');
+}
+
+function copySummary() {
+  copyToClipboard(currentResult.summary || '', '摘要已复制');
+}
+
+function downloadYaml() {
+  downloadFile(currentResult.yaml || currentResult.raw || '', 'test_case.yaml');
+}
+
+function downloadRawYaml() {
+  downloadFile(currentResult.raw || '', 'test_case_raw.txt');
+}
+
+function clearAll() {
+  document.getElementById('curl-input').value = '';
+  document.getElementById('text-input').value = '';
+  imageBase64 = null;
+  previewImg.src = '';
+  uploadZone.classList.remove('has-image');
+  attachedImages = [];
+  renderAttachedImages();
+  currentResult = { summary: '', yaml: '', yaml_body: '', raw: '', model: '' };
+  const yb = document.getElementById('yaml-output');
+  yb.value = '';
+  yb.readOnly = true;
+  document.getElementById('summary-box').textContent = '等待生成...';
+  document.getElementById('status-badge').innerHTML = '';
+  document.getElementById('model-tag').textContent = '';
+}
+
+function addHistory(result) {
+  history.unshift({ ...result, time: new Date().toLocaleString() });
+  if (history.length > 20) history.length = 20;
+  document.getElementById('history-count').textContent = history.length;
+}
+
+function toggleHistory() {
+  if (history.length === 0) { showToast('暂无历史记录', 'err'); return; }
+  const w = window.open('', '_blank', 'width=700,height=500');
+  w.document.write('<html><head><meta charset=utf-8><title>生成历史</title><style>body{font-family:monospace;padding:20px;background:#1e1e2e;color:#cdd6f4} .item{border-bottom:1px solid #333;padding:12px 0} .time{color:#585b70;font-size:12px} pre{white-space:pre-wrap;word-break:break-all;max-height:200px;overflow-y:auto}</style></head><body>');
+  w.document.write('<h2>📜 生成历史 (' + history.length + ')</h2>');
+  history.forEach((h, i) => {
+    w.document.write('<div class=item><div class=time>' + h.time + ' | ' + (h.model||'') + '</div>');
+    w.document.write('<div><b>摘要:</b> ' + (h.summary||'') + '</div>');
+    w.document.write('<pre>' + (h.raw||h.yaml||'') + '</pre></div>');
+  });
+  w.document.write('</body></html>');
+}
+
+function toggleRaw() {
+  rawMode = !rawMode;
+  const yamlBox = document.getElementById('yaml-output');
+  if (rawMode) {
+    yamlBox.value = currentResult.raw || '';
+    showToast('已切换为原文模式');
+  } else {
+    yamlBox.value = currentResult.yaml || '';
+    showToast('已切换为精简模式');
+  }
+}
+
+function copyToClipboard(text, msg) {
+  if (!text) { showToast('无内容可复制', 'err'); return; }
+  navigator.clipboard.writeText(text).then(() => showToast(msg || '已复制', 'ok')).catch(() => showToast('复制失败，请手动选择', 'err'));
+}
+
+function downloadFile(content, filename) {
+  if (!content) { showToast('无内容可下载', 'err'); return; }
+  const blob = new Blob([content], { type: 'text/yaml;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function showToast(msg, type) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast toast-' + (type === 'ok' ? 'ok' : 'err') + ' show';
+  setTimeout(() => t.classList.remove('show'), 2000);
+}
+
+// ── 快捷键 ──
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); doGenerate(); }
+});
+
+// ── 执行用例 ──
+async function doExecute() {
+  const yb = document.getElementById('yaml-output');
+  const yamlBody = yb.value.trim();
+  if (!yamlBody) {
+    showToast('请先生成 YAML 用例', 'err'); return;
+  }
+  const btn = document.getElementById('execute-btn');
+  const spinner = document.getElementById('exec-spinner');
+  btn.disabled = true;
+  spinner.style.display = 'inline-block';
+  setConsole('<span class="c-info">⏳ 正在保存 YAML → 生成测试文件 → 执行用例...</span>');
+
+  // 从摘要提取文件名
+  const summary = currentResult.summary || 'auto_case';
+  const filename = summary.replace(/[\\/:*?"<>|]/g, '').substring(0, 30) || 'auto_yaml_case';
+
+  try {
+    const resp = await fetch('/api/execute', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        yaml_body: yamlBody,
+        filename: filename,
+        input_type: activeTab,
+        input_content: getInputContent(),
+        summary: currentResult.summary,
+        model: currentResult.model,
+      }),
+    });
+    const data = await resp.json();
+
+    if (data.success) {
+      const reportLink = data.report_url
+        ? `<br><a href="${data.report_url}" target="_blank" style="color:#1890ff;">📊 打开 Allure 报告 →</a>`
+        : '';
+      const stdoutText = data.stdout || '';
+      const stderrText = data.stderr || '';
+      let html = `<span class="c-ok">✅ 执行完成 (返回码: ${data.pytest_rc})</span>\n`;
+      html += `<span class="c-dim">YAML: ${data.yaml_file} | 测试: ${data.test_file}</span>\n`;
+      if (data.report_url) html += `<a href="${data.report_url}" target="_blank" style="color:#1890ff;">📊 打开 Allure 报告 →</a>\n`;
+      html += `\n<span style="color:#fff;font-weight:600;">── stdout ──</span>\n`;
+      html += `<span class="c-dim">${escapeHtml(stdoutText || '(空)')}</span>\n`;
+      if (stderrText) {
+        html += `\n<span class="c-warn">── stderr ──</span>\n`;
+        html += `<span class="c-warn">${escapeHtml(stderrText)}</span>\n`;
+      }
+      html += reportLink;
+      setConsole(html);
+      showToast('用例执行完成', 'ok');
+      loadDbCount();
+    } else {
+      let html = `<span class="c-err">❌ 执行失败</span>\n`;
+      html += `<span class="c-err">${escapeHtml(data.error || '未知错误')}</span>\n`;
+      if (data.stderr) html += `<span class="c-warn">${escapeHtml(data.stderr)}</span>\n`;
+      setConsole(html);
+      showToast('执行失败: ' + (data.error || '未知错误'), 'err');
+    }
+  } catch (e) {
+    setConsole(`<span class="c-err">❌ 网络错误: ${escapeHtml(e.message)}</span>`);
+    showToast('网络错误', 'err');
+  } finally {
+    btn.disabled = false;
+    spinner.style.display = 'none';
+  }
+}
+
+async function doAiAssert() {
+  const yamlBody = document.getElementById('yaml-output').value.trim();
+  if (!yamlBody) {
+    showToast('请先生成 YAML 用例', 'err'); return;
+  }
+  const btn = document.getElementById('ai-assert-btn');
+  const spinner = document.getElementById('ai-spinner');
+  btn.disabled = true;
+  spinner.style.display = 'inline-block';
+  setConsole('<span class="c-info">⏳ AI 正在分析响应结果...</span>');
+
+  try {
+    const resp = await fetch('/api/ai_assert', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ yaml_body: yamlBody, normalize_asserts: normalizeAsserts }),
+    });
+    const data = await resp.json();
+
+    if (data.results) {
+      const ok = data.status === '通过';
+      const icon = ok ? '✅' : '❌';
+      let html = `<span class="${ok ? 'c-ok' : 'c-err'}" style="font-size:14px;font-weight:600;">${icon} AI断言结果: ${escapeHtml(data.summary || '')}</span>\n`;
+      html += '<hr class="c-hr">\n';
+      data.results.forEach(r => {
+        const ok2 = r.status === '通过';
+        const i2 = ok2 ? '✅' : r.status === '错误' ? '⚠️' : '❌';
+        const cls = ok2 ? 'c-ok' : 'c-err';
+        html += `<span class="${cls}">${i2} <b>${escapeHtml(r.case_id)}</b> — HTTP ${r.response_code || '-'}</span>\n`;
+        html += `<span class="c-dim">  断言: ${escapeHtml(r.assert_desc || '-')}</span>\n`;
+        html += `<span>  💡 ${escapeHtml(r.reason)}</span>\n`;
+      });
+      setConsole(html);
+      showToast('AI断言完成: ' + (data.summary || ''), ok ? 'ok' : 'err');
+    } else {
+      setConsole(`<span class="c-err">❌ ${escapeHtml(data.error || 'AI断言失败')}</span>`);
+      showToast('AI断言失败', 'err');
+    }
+  } catch (e) {
+    setConsole(`<span class="c-err">❌ 网络错误: ${escapeHtml(e.message)}</span>`);
+    showToast('网络错误', 'err');
+  } finally {
+    btn.disabled = false;
+    spinner.style.display = 'none';
+  }
+}
+
+function getInputContent() {
+  if (activeTab === 'curl') return document.getElementById('curl-input').value.trim();
+  if (activeTab === 'text') return document.getElementById('text-input').value.trim();
+  return '';
+}
+
+// ── 数据库配置 ──
+async function loadDbConfig() {
+  try {
+    const resp = await fetch('/api/db/config');
+    const data = await resp.json();
+    if (data.db_path) document.getElementById('db-path').value = data.db_path;
+  } catch (e) { /* ignore */ }
+}
+
+async function loadDbCount() {
+  try {
+    const resp = await fetch('/api/db/records?limit=1');
+    const data = await resp.json();
+    document.getElementById('db-count').textContent = data.count ? `(${data.count} 条记录)` : '';
+  } catch (e) { /* ignore */ }
+}
+
+async function setDbPath() {
+  const path = document.getElementById('db-path').value.trim();
+  if (!path) { showToast('请输入数据库路径', 'err'); return; }
+  try {
+    const resp = await fetch('/api/db/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ db_path: path }),
+    });
+    const data = await resp.json();
+    if (data.success) { showToast('数据库路径已更新', 'ok'); loadDbCount(); }
+    else { showToast('设置失败: ' + (data.error || ''), 'err'); }
+  } catch (e) { showToast('网络错误', 'err'); }
+}
+
+// ── 页签切换 ──
+function switchPage(page) {
+  document.querySelectorAll('.page-tab').forEach(b => {
+    b.classList.toggle('active', b.dataset.page === page);
+  });
+  document.getElementById('view-generate').classList.toggle('hidden', page !== 'generate');
+  document.getElementById('view-records').classList.toggle('hidden', page !== 'records');
+  document.getElementById('view-perf').classList.toggle('hidden', page !== 'perf');
+  if (page === 'records') loadRecords();
+}
+
+let allRecords = [];
+
+async function loadRecords() {
+  const empty = document.getElementById('records-empty');
+  const table = document.getElementById('records-table');
+  const tbody = document.getElementById('records-tbody');
+  const countEl = document.getElementById('records-count');
+  empty.style.display = ''; empty.textContent = '加载中...';
+  table.style.display = 'none';
+  try {
+    const resp = await fetch('/api/db/records?limit=200');
+    const data = await resp.json();
+    if (!data.success) { empty.textContent = '查询失败'; return; }
+    allRecords = data.records || [];
+    countEl.textContent = '共 ' + allRecords.length + ' 条';
+    filterRecords();
+  } catch (e) {
+    empty.textContent = '加载异常: ' + e.message;
+  }
+}
+
+function filterRecords() {
+  const kw = (document.getElementById('records-search')?.value || '').toLowerCase();
+  const empty = document.getElementById('records-empty');
+  const table = document.getElementById('records-table');
+  const tbody = document.getElementById('records-tbody');
+  const filtered = kw ? allRecords.filter(r =>
+    (r.filename||'').toLowerCase().includes(kw) ||
+    (r.summary||'').toLowerCase().includes(kw) ||
+    (r.model||'').toLowerCase().includes(kw) ||
+    (r.input_type||'').toLowerCase().includes(kw)
+  ) : allRecords;
+  if (filtered.length === 0) {
+    empty.style.display = ''; empty.textContent = kw ? '无匹配记录' : '暂无记录';
+    table.style.display = 'none';
+    return;
+  }
+  empty.style.display = 'none';
+  table.style.display = '';
+  tbody.innerHTML = filtered.map(r => {
+    const execTag = r.executed
+      ? '<span class="tag-exec-ok">已执行</span>'
+      : '<span class="tag-exec-no">未执行</span>';
+    const summary = (r.summary || '').substring(0, 50);
+    return '<tr>' +
+      '<td>' + r.id + '</td>' +
+      '<td><div class="cell-wrap" title="' + escapeHtml(r.filename||'') + '">' + escapeHtml(r.filename||'-') + '</div></td>' +
+      '<td>' + escapeHtml(r.input_type||'-') + '</td>' +
+      '<td><div class="cell-summary" title="' + escapeHtml(r.summary||'') + '">' + escapeHtml(summary||'-') + '</div></td>' +
+      '<td>' + escapeHtml(r.model||'-') + '</td>' +
+      '<td>' + execTag + '</td>' +
+      '<td style="font-size:12px;color:#888;white-space:nowrap;">' + (r.created_at||'-') + '</td>' +
+    '</tr>';
+  }).join('');
+}
+
+// ── 性能测试 ──
+let perfAbort = false;
+
+function addPerfHeader() {
+  const list = document.getElementById('perf-headers');
+  const div = document.createElement('div');
+  div.className = 'perf-header-item';
+  div.innerHTML = '<input placeholder="Key"><input placeholder="Value"><button class="btn-remove" onclick="removePerfHeader(this)">×</button>';
+  list.appendChild(div);
+}
+
+function removePerfHeader(btn) {
+  btn.parentElement.remove();
+}
+
+function getPerfHeaders() {
+  const h = {};
+  document.querySelectorAll('#perf-headers .perf-header-item').forEach(row => {
+    const inputs = row.querySelectorAll('input');
+    if (inputs[0].value.trim()) h[inputs[0].value.trim()] = inputs[1].value;
+  });
+  return h;
+}
+
+async function doPerfTest() {
+  const url = document.getElementById('perf-url').value.trim();
+  if (!url) { showToast('请输入目标 URL', 'err'); return; }
+
+  const method = document.getElementById('perf-method').value;
+  const concurrency = parseInt(document.getElementById('perf-concurrency').value);
+  const total = parseInt(document.getElementById('perf-total').value);
+  const headers = getPerfHeaders();
+  const bodyStr = document.getElementById('perf-body').value.trim();
+
+  const runBtn = document.getElementById('perf-run-btn');
+  const stopBtn = document.getElementById('perf-stop-btn');
+  const spinner = document.getElementById('perf-spinner');
+  const progDiv = document.getElementById('perf-progress');
+  const progBar = document.getElementById('perf-progress-bar');
+
+  perfAbort = false;
+  runBtn.disabled = true;
+  spinner.style.display = 'inline-block';
+  stopBtn.style.display = 'inline-block';
+  progDiv.style.display = '';
+  progBar.style.width = '0%';
+  document.getElementById('perf-status').textContent = '运行中...';
+
+  // Reset results
+  ['perf-total-req','perf-ok','perf-err','perf-tps','perf-avg','perf-p50','perf-p90','perf-p95','perf-p99','perf-min','perf-max'].forEach(id => {
+    document.getElementById(id).textContent = id.startsWith('perf-t') ? '-' : '- ms';
+  });
+  // Reset TPS unit
+  document.getElementById('perf-tps').innerHTML = '-<span class="unit"> req/s</span>';
+
+  const latencies = [];
+  let completed = 0, success = 0, failed = 0;
+  const startTime = performance.now();
+
+  // Build fetch options
+  const fetchOpts = { method, headers };
+  if (['POST','PUT','PATCH'].includes(method) && bodyStr) {
+    fetchOpts.body = bodyStr;
+  }
+
+  const tasks = [];
+  let idx = 0;
+
+  async function worker() {
+    while (!perfAbort) {
+      const i = idx++;
+      if (i >= total) break;
+      const t0 = performance.now();
+      try {
+        const resp = await fetch(url, fetchOpts);
+        const ms = Math.round(performance.now() - t0);
+        latencies.push(ms);
+        if (resp.ok) success++; else failed++;
+      } catch (e) {
+        latencies.push(Math.round(performance.now() - t0));
+        failed++;
+      }
+      completed++;
+      const pct = Math.round(completed / total * 100);
+      progBar.style.width = pct + '%';
+      // Update live metrics
+      const elapsed = (performance.now() - startTime) / 1000;
+      document.getElementById('perf-total-req').textContent = completed;
+      document.getElementById('perf-ok').textContent = success;
+      document.getElementById('perf-err').textContent = failed;
+      document.getElementById('perf-tps').innerHTML = (elapsed > 0 ? (completed / elapsed).toFixed(1) : '0') + '<span class="unit"> req/s</span>';
+    }
+  }
+
+  for (let w = 0; w < concurrency; w++) tasks.push(worker());
+  await Promise.all(tasks);
+
+  const elapsed = (performance.now() - startTime) / 1000;
+  // Calculate percentiles
+  if (latencies.length > 0) latencies.sort((a, b) => a - b);
+  const p = (pct) => latencies.length > 0 ? latencies[Math.min(Math.floor(latencies.length * pct / 100), latencies.length - 1)] : 0;
+  const avg = latencies.length > 0 ? Math.round(latencies.reduce((a, b) => a + b, 0) / latencies.length) : 0;
+
+  document.getElementById('perf-total-req').textContent = completed;
+  document.getElementById('perf-ok').textContent = success;
+  document.getElementById('perf-err').textContent = failed;
+  document.getElementById('perf-tps').innerHTML = (elapsed > 0 ? (completed / elapsed).toFixed(1) : '0') + '<span class="unit"> req/s</span>';
+  document.getElementById('perf-avg').textContent = avg + ' ms';
+  document.getElementById('perf-p50').textContent = p(50) + ' ms';
+  document.getElementById('perf-p90').textContent = p(90) + ' ms';
+  document.getElementById('perf-p95').textContent = p(95) + ' ms';
+  document.getElementById('perf-p99').textContent = p(99) + ' ms';
+  document.getElementById('perf-min').textContent = (latencies.length > 0 ? latencies[0] : '-') + ' ms';
+  document.getElementById('perf-max').textContent = (latencies.length > 0 ? latencies[latencies.length - 1] : '-') + ' ms';
+
+  document.getElementById('perf-status').textContent = perfAbort ? '已停止' : '完成';
+  progBar.style.width = '100%';
+  runBtn.disabled = false;
+  spinner.style.display = 'none';
+  stopBtn.style.display = 'none';
+}
+
+function stopPerfTest() {
+  perfAbort = true;
+  document.getElementById('perf-stop-btn').disabled = true;
+  document.getElementById('perf-status').textContent = '停止中...';
+}
+
+// ── 工具函数 ──
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+// ── 控制台面板 ──
+let consoleVisible = false;
+let consoleCollapsed = false;
+let consoleContent = '';
+
+function showConsole() {
+  const panel = document.getElementById('console-panel');
+  const body = document.getElementById('console-body');
+  panel.style.display = 'flex';
+  panel.style.maxHeight = '40vh';
+  panel.style.minHeight = '120px';
+  body.style.display = '';
+  consoleVisible = true;
+  consoleCollapsed = false;
+  document.getElementById('console-toggle-btn').textContent = '▲ 收起';
+}
+
+function toggleConsoleCollapse() {
+  const panel = document.getElementById('console-panel');
+  const body = document.getElementById('console-body');
+  const btn = document.getElementById('console-toggle-btn');
+  if (consoleCollapsed) {
+    panel.style.maxHeight = '40vh';
+    panel.style.minHeight = '120px';
+    body.style.display = '';
+    btn.textContent = '▲ 收起';
+    consoleCollapsed = false;
+  } else {
+    panel.style.maxHeight = '36px';
+    panel.style.minHeight = '36px';
+    body.style.display = 'none';
+    btn.textContent = '▼ 展开';
+    consoleCollapsed = true;
+  }
+}
+
+function hideConsole() {
+  // 改为收起而非关闭
+  toggleConsoleCollapse();
+  if (!consoleCollapsed) {
+    // 如果调用hideConsole时面板是收起状态，重新显示
+    showConsole();
+  }
+}
+
+function clearConsole() {
+  consoleContent = '';
+  document.getElementById('console-body').innerHTML = '';
+}
+
+function appendConsole(html) {
+  consoleContent += html;
+  const body = document.getElementById('console-body');
+  body.innerHTML = consoleContent;
+  body.scrollTop = body.scrollHeight;
+  showConsole();
+}
+
+function setConsole(html) {
+  consoleContent = html;
+  const body = document.getElementById('console-body');
+  body.innerHTML = consoleContent;
+  body.scrollTop = 0;
+  showConsole();
+}
+
+function copyConsole() {
+  const body = document.getElementById('console-body');
+  const text = body.innerText || body.textContent;
+  navigator.clipboard.writeText(text).then(() => showToast('日志已复制', 'ok')).catch(() => showToast('复制失败', 'err'));
+}
+
+// ── 控制台拖拽调整高度 ──
+(function() {
+  let dragging = false, startY, startH;
+  const header = document.getElementById('console-header');
+  const panel = document.getElementById('console-panel');
+  header.addEventListener('mousedown', e => {
+    dragging = true; startY = e.clientY; startH = panel.offsetHeight;
+    document.body.style.userSelect = 'none';
+  });
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const newH = Math.max(80, Math.min(startH + startY - e.clientY, window.innerHeight * 0.7));
+    panel.style.maxHeight = panel.style.minHeight = newH + 'px';
+  });
+  document.addEventListener('mouseup', () => {
+    dragging = false; document.body.style.userSelect = '';
+  });
+})();
+
+// ── 页面初始化 ──
+loadDbConfig();
+loadDbCount();
+</script>
+
+<!-- 运行日志控制台面板 -->
+<div class="console-panel" id="console-panel" style="display:none;">
+  <div class="console-header" id="console-header">
+    <span>📋 运行日志</span>
+    <span style="flex:1"></span>
+    <button class="btn btn-outline console-btn" onclick="clearConsole()" title="清空">🗑 清空</button>
+    <button class="btn btn-outline console-btn" onclick="copyConsole()" title="复制全部">📋 复制</button>
+    <button class="btn btn-outline console-btn" id="console-toggle-btn" onclick="toggleConsoleCollapse()" title="收起/展开">▲ 收起</button>
+  </div>
+  <div class="console-body" id="console-body"></div>
+</div>
+
+</body>
+</html>

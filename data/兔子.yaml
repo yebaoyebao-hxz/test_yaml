@@ -1,0 +1,954 @@
+case_common:
+  allureEpic: 接口自动化测试
+  allureFeature: 兔子模块
+  allureStory: 兔子模块接口测试
+
+兔子_01:
+  host: ${{host()}}
+  url: /api/login/send_sms
+  method: POST
+  detail: 测试已注册手机号
+  headers:
+    User-Agent: Dalvik/2.1.0 (Linux; U; Android 12; V2366GA Build/55cac2b.0)
+    Host: wwyd.vip.hnhxzkj.com
+  requestType: json
+  is_run:
+  data:
+    phone: '13224523466'
+  dependence_case: false
+  dependence_case_data:
+  assert:
+    code:
+      jsonpath: $.code
+      type: ==
+      value: 500
+      AssertType:
+    msg:
+      jsonpath: $.msg
+      type: ==
+      value: 本次测试验证码为:1111
+      AssertType:
+    data:
+      jsonpath: $.data
+      type: ==
+      value: []
+      AssertType:
+  sql:
+  extract:
+
+兔子_02:
+  host: ${{host()}}
+  url: /api/login/send_sms
+  method: POST
+  detail: 测试未注册手机号
+  headers:
+    User-Agent: Dalvik/2.1.0 (Linux; U; Android 12; V2366GA Build/55cac2b.1)
+    Host: wwyd.vip.hnhxzkj.com
+  requestType: json
+  is_run:
+  data:
+    phone: '13800138000'
+  dependence_case: false
+  dependence_case_data:
+  assert:
+    code:
+      jsonpath: $.code
+      type: ==
+      value: 500
+      AssertType:
+    msg:
+      jsonpath: $.msg
+      type: ==
+      value: 本次测试验证码为:1111
+      AssertType:
+    data:
+      jsonpath: $.data
+      type: ==
+      value: []
+      AssertType:
+  sql:
+  extract:
+
+兔子_03:
+  host: ${{host()}}
+  url: /api/login/send_sms
+  method: POST
+  detail: 测试边界-手机号为空
+  headers:
+    User-Agent: Dalvik/2.1.0 (Linux; U; Android 12; V2366GA Build/55cac2b.2)
+    Host: wwyd.vip.hnhxzkj.com
+  requestType: json
+  is_run:
+  data: {}
+  dependence_case: false
+  dependence_case_data:
+  assert:
+    code:
+      jsonpath: $.code
+      type: ==
+      value: 500
+      AssertType:
+    msg:
+      jsonpath: $.msg
+      type: ==
+      value: 手机号不能为空
+      AssertType:
+    data:
+      jsonpath: $.data
+      type: ==
+      value: []
+      AssertType:
+  sql:
+  extract:
+
+兔子_04:
+  host: ${{host()}}
+  url: /api/login/send_sms
+  method: POST
+  detail: 测试边界-手机号格式错误（位数不足）
+  headers:
+    User-Agent: Dalvik/2.1.0 (Linux; U; Android 12; V2366GA Build/55cac2b.3)
+    Host: wwyd.vip.hnhxzkj.com
+  requestType: json
+  is_run:
+  data:
+    phone: '123'
+  dependence_case: false
+  dependence_case_data:
+  assert:
+    code:
+      jsonpath: $.code
+      type: ==
+      value: 500
+      AssertType:
+    msg:
+      jsonpath: $.msg
+      type: ==
+      value: 手机号输入格式不正确
+      AssertType:
+    data:
+      jsonpath: $.data
+      type: ==
+      value: []
+      AssertType:
+  sql:
+  extract:
+
+兔子_05:
+  host: ${{host()}}
+  url: /api/login/send_sms
+  method: POST
+  detail: 测试边界-手机号格式错误（包含字母）
+  headers:
+    User-Agent: Dalvik/2.1.0 (Linux; U; Android 12; V2366GA Build/55cac2b.4)
+    Host: wwyd.vip.hnhxzkj.com
+  requestType: json
+  is_run:
+  data:
+    phone: 132abc27247
+  dependence_case: false
+  dependence_case_data:
+  assert:
+    code:
+      jsonpath: $.code
+      type: ==
+      value: 500
+      AssertType:
+  sql:
+  extract:
+
+兔子_06:
+  host: ${{host()}}
+  url: /api/login/send_sms
+  method: POST
+  detail: 测试异常-多余参数
+  headers:
+    User-Agent: Dalvik/2.1.0 (Linux; U; Android 12; V2366GA Build/55cac2b.5)
+    Host: wwyd.vip.hnhxzkj.com
+  requestType: json
+  is_run:
+  data:
+    phone: '13227367247'
+    extra: test
+  dependence_case: false
+  dependence_case_data:
+  assert:
+    code:
+      jsonpath: $.code
+      type: ==
+      value: 500
+      AssertType:
+  sql:
+  extract:
+
+兔子_07:
+  host: ${{host()}}
+  url: /api/login/index
+  method: POST
+  detail: 测试正常-正确验证码登录
+  headers:
+    User-Agent: Dalvik/2.1.0 (Linux; U; Android 12; V2366GA Build/55cac2b.0)
+    Host: wwyd.vip.hnhxzkj.com
+  requestType: json
+  is_run:
+  data:
+    platform: 4
+    phone: '13224523466'
+    sms_code: '1111'
+  dependence_case: false
+  dependence_case_data:
+  assert:
+    code:
+      jsonpath: $.code
+      type: ==
+      value: 0
+      AssertType:
+    msg:
+      jsonpath: $.msg
+      type: ==
+      value: ok
+      AssertType:
+  sql:
+  extract:
+
+兔子_08:
+  host: ${{host()}}
+  url: /api/login/index
+  method: POST
+  detail: 测试边界-错误验证码
+  headers:
+    User-Agent: Dalvik/2.1.0 (Linux; U; Android 12; V2366GA Build/55cac2b.1)
+    Host: wwyd.vip.hnhxzkj.com
+  requestType: json
+  is_run:
+  data:
+    platform: 4
+    phone: '13227367247'
+    sms_code: '0000'
+  dependence_case: false
+  dependence_case_data:
+  assert:
+    code:
+      jsonpath: $.code
+      type: ==
+      value: 500
+      AssertType:
+    msg:
+      jsonpath: $.msg
+      type: ==
+      value: 验证码错误
+      AssertType:
+    data:
+      jsonpath: $.data
+      type: ==
+      value: []
+      AssertType:
+  sql:
+  extract:
+
+兔子_09:
+  host: ${{host()}}
+  url: /api/login/index
+  method: POST
+  detail: 测试边界-手机号与验证码不匹配（手机号未发短信）
+  headers:
+    User-Agent: Dalvik/2.1.0 (Linux; U; Android 12; V2366GA Build/55cac2b.2)
+    Host: wwyd.vip.hnhxzkj.com
+  requestType: json
+  is_run:
+  data:
+    platform: 4
+    phone: '13800138000'
+    sms_code: '1111'
+  dependence_case: false
+  dependence_case_data:
+  assert:
+    code:
+      jsonpath: $.code
+      type: ==
+      value: 0
+      AssertType:
+    msg:
+      jsonpath: $.msg
+      type: ==
+      value: ok
+      AssertType:
+  sql:
+  extract:
+
+兔子_10:
+  host: ${{host()}}
+  url: /api/login/index
+  method: POST
+  detail: 测试边界-platform参数类型错误（传字符串非数字）
+  headers:
+    User-Agent: Dalvik/2.1.0 (Linux; U; Android 12; V2366GA Build/55cac2b.3)
+    Host: wwyd.vip.hnhxzkj.com
+  requestType: json
+  is_run:
+  data:
+    platform: abc
+    phone: '13227367247'
+    sms_code: '1111'
+  dependence_case: false
+  dependence_case_data:
+  assert:
+    code:
+      jsonpath: $.code
+      type: ==
+      value: 500
+      AssertType:
+    msg:
+      jsonpath: $.msg
+      type: ==
+      value: 平台参数错误
+      AssertType:
+    data:
+      jsonpath: $.data
+      type: ==
+      value: []
+      AssertType:
+  sql:
+  extract:
+
+兔子_11:
+  host: ${{host()}}
+  url: /api/login/index
+  method: POST
+  detail: 测试边界-platform为空
+  headers:
+    User-Agent: Dalvik/2.1.0 (Linux; U; Android 12; V2366GA Build/55cac2b.4)
+    Host: wwyd.vip.hnhxzkj.com
+  requestType: json
+  is_run:
+  data:
+    phone: '13227367247'
+    sms_code: '1111'
+  dependence_case: false
+  dependence_case_data:
+  assert:
+    code:
+      jsonpath: $.code
+      type: ==
+      value: 500
+      AssertType:
+    msg:
+      jsonpath: $.msg
+      type: ==
+      value: 平台参数错误
+      AssertType:
+    data:
+      jsonpath: $.data
+      type: ==
+      value: []
+      AssertType:
+  sql:
+  extract:
+
+兔子_12:
+  host: ${{host()}}
+  url: /api/login/index
+  method: POST
+  detail: 测试异常-手机号格式错误
+  headers:
+    User-Agent: Dalvik/2.1.0 (Linux; U; Android 12; V2366GA Build/55cac2b.5)
+    Host: wwyd.vip.hnhxzkj.com
+  requestType: json
+  is_run:
+  data:
+    platform: 4
+    phone: '1322466'
+    sms_code: '1111'
+  dependence_case: false
+  dependence_case_data:
+  assert:
+    code:
+      jsonpath: $.code
+      type: ==
+      value: 0
+      AssertType:
+    msg:
+      jsonpath: $.msg
+      type: ==
+      value: ok
+      AssertType:
+  sql:
+  extract:
+
+兔子_13:
+  host: ${{host()}}
+  url: /api/login/index
+  method: POST
+  detail: 测试异常-缺少phone
+  headers:
+    User-Agent: Dalvik/2.1.0 (Linux; U; Android 12; V2366GA Build/55cac2b.6)
+    Host: wwyd.vip.hnhxzkj.com
+  requestType: json
+  is_run:
+  data:
+    platform: 4
+    sms_code: '1111'
+  dependence_case: false
+  dependence_case_data:
+  assert:
+    code:
+      jsonpath: $.code
+      type: ==
+      value: 500
+      AssertType:
+    msg:
+      jsonpath: $.msg
+      type: ==
+      value: 手机号不能为空
+      AssertType:
+    data:
+      jsonpath: $.data
+      type: ==
+      value: []
+      AssertType:
+  sql:
+  extract:
+
+兔子_14:
+  host: ${{host()}}
+  url: /api/login/index
+  method: POST
+  detail: 测试异常-缺少sms_code
+  headers:
+    User-Agent: Dalvik/2.1.0 (Linux; U; Android 12; V2366GA Build/55cac2b.7)
+    Host: wwyd.vip.hnhxzkj.com
+  requestType: json
+  is_run:
+  data:
+    platform: 4
+    phone: '13227367247'
+  dependence_case: false
+  dependence_case_data:
+  assert:
+    code:
+      jsonpath: $.code
+      type: ==
+      value: 500
+      AssertType:
+    msg:
+      jsonpath: $.msg
+      type: ==
+      value: 验证码不能为空
+      AssertType:
+    data:
+      jsonpath: $.data
+      type: ==
+      value: []
+      AssertType:
+  sql:
+  extract:
+
+兔子_15:
+  host: ${{host()}}
+  url: /api/login/index
+  method: POST
+  detail: 测试异常-多余参数
+  headers:
+    User-Agent: Dalvik/2.1.0 (Linux; U; Android 12; V2366GA Build/55cac2b.8)
+    Host: wwyd.vip.hnhxzkj.com
+  requestType: json
+  is_run:
+  data:
+    platform: 4
+    phone: '13227367247'
+    sms_code: '1111'
+    extra: 1
+  dependence_case: false
+  dependence_case_data:
+  assert:
+    code:
+      jsonpath: $.code
+      type: ==
+      value: 0
+      AssertType:
+    msg:
+      jsonpath: $.msg
+      type: ==
+      value: ok
+      AssertType:
+  sql:
+  extract:
+
+兔子_16:
+  host: ${{host()}}
+  url: /api/user/info
+  method: POST
+  detail: '测试获取用户信息 '
+  headers:
+    User-Agent: Dalvik/2.1.0 (Linux; U; Android 12; V2366GA Build/55cac2b.0)
+    Host: wwyd.vip.hnhxzkj.com
+  requestType: json
+  is_run:
+  data: {}
+  dependence_case: false
+  dependence_case_data:
+  assert:
+    code:
+      jsonpath: $.code
+      type: ==
+      value: 0
+      AssertType:
+    msg:
+      jsonpath: $.msg
+      type: ==
+      value: ok
+      AssertType:
+  sql:
+  extract:
+
+兔子_17:
+  host: ${{host()}}
+  url: /api/mood/receive
+  method: POST
+  detail: 测试接收心情数据 - 已领取
+  headers:
+    User-Agent: Dalvik/2.1.0 (Linux; U; Android 12; V2366GA Build/55cac2b.0)
+    Host: wwyd.vip.hnhxzkj.com
+  requestType: json
+  is_run:
+  data:
+    id: 1
+  dependence_case: false
+  dependence_case_data:
+  assert:
+    code:
+      jsonpath: $.code
+      type: ==
+      value: 500
+      AssertType:
+    msg:
+      jsonpath: $.msg
+      type: ==
+      value: 该奖励已领取
+      AssertType:
+  sql:
+  extract:
+
+兔子_18:
+  host: ${{host()}}
+  url: /api/mood/receive
+  method: POST
+  detail: 测试接收心情数据 - 可领取
+  headers:
+    User-Agent: Dalvik/2.1.0 (Linux; U; Android 12; V2366GA Build/55cac2b.0)
+    Host: wwyd.vip.hnhxzkj.com
+  requestType: json
+  is_run:
+  data:
+    id: 1
+  dependence_case: false
+  dependence_case_data:
+  assert:
+    code:
+      jsonpath: $.code
+      type: ==
+      value: 500
+      AssertType:
+    msg:
+      jsonpath: $.msg
+      type: ==
+      value: 领取奖励
+      AssertType:
+  sql:
+  extract:
+
+兔子_19:
+  host: ${{host()}}
+  url: /api/mood/receive
+  method: POST
+  detail: 测试接收心情数据 - 不可领取
+  headers:
+    User-Agent: Dalvik/2.1.0 (Linux; U; Android 12; V2366GA Build/55cac2b.0)
+    Host: wwyd.vip.hnhxzkj.com
+  requestType: json
+  is_run:
+  data:
+    id: 1
+  dependence_case: false
+  dependence_case_data:
+  assert:
+    code:
+      jsonpath: $.code
+      type: ==
+      value: 500
+      AssertType:
+    msg:
+      jsonpath: $.msg
+      type: ==
+      value: 未达到对应心情值
+      AssertType:
+  sql:
+  extract:
+
+兔子_20:
+  host: ${{host()}}
+  url: /api/user/websocket
+  method: POST
+  detail: 测试重新登录情况
+  headers:
+    User-Agent: Dalvik/2.1.0 (Linux; U; Android 12; V2366GA Build/55cac2b.0)
+    Host: wwyd.vip.hnhxzkj.com
+    authorization: Bearer 
+      eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJ3ZWJtYW4udGlueXdhbi5jbiIsImF1ZCI6IndlYm1hbi50aW55d2FuLmNuIiwiaWF0IjoxNzc4ODM2MTUwLCJuYmYiOjE3Nzg4MzYxNTAsImV4cCI6MjY0MjgzNjE1MCwiZXh0ZW5kIjp7ImlkIjoxMjM3MjAsImFjY2Vzc19leHAiOjg2NDAwMDAwMCwicmVmcmVzaF9leHAiOjg2NDAwMDAwMCwibmFtZSI6bnVsbCwiY2xpZW50IjoiTU9CSUxFIn19.TGZd_Om558V3VwfF8GgAXiS0KlrmNstorvs_bm5YOkw
+  requestType: json
+  is_run:
+  data: {}
+  dependence_case: false
+  dependence_case_data:
+  assert:
+    code:
+      jsonpath: $.code
+      type: ==
+      value: 0
+      AssertType:
+    msg:
+      jsonpath: $.msg
+      type: ==
+      value: ok
+      AssertType:
+  sql:
+  extract:
+
+兔子_21:
+  host: ${{host()}}
+  url: /api/user/game_start
+  method: POST
+  detail: 测试开启小游戏1
+  headers:
+    User-Agent: Dalvik/2.1.0 (Linux; U; Android 12; V2366GA Build/55cac2b.0)
+    Host: wwyd.vip.hnhxzkj.com
+  requestType: json
+  is_run:
+  data:
+    type: game_one
+  dependence_case: false
+  dependence_case_data:
+  assert:
+    code:
+      jsonpath: $.code
+      type: ==
+      value: 0
+      AssertType:
+    msg:
+      jsonpath: $.msg
+      type: ==
+      value: ok
+      AssertType:
+  sql:
+  extract:
+
+兔子_22:
+  host: ${{host()}}
+  url: /api/user/game_over
+  method: POST
+  detail: 测试小游戏1结算
+  headers:
+    User-Agent: Dalvik/2.1.0 (Linux; U; Android 12; V2366GA Build/55cac2b.0)
+    Host: wwyd.vip.hnhxzkj.com
+  requestType: json
+  is_run:
+  data:
+    type: game_one
+    score: '1'
+  dependence_case: false
+  dependence_case_data:
+  assert:
+    code:
+      jsonpath: $.code
+      type: ==
+      value: 0
+      AssertType:
+    msg:
+      jsonpath: $.msg
+      type: ==
+      value: ok
+      AssertType:
+  sql:
+  extract:
+
+兔子_23:
+  host: ${{host()}}
+  url: /api/user/game_start
+  method: POST
+  detail: 测试开启小游戏2
+  headers:
+    User-Agent: Dalvik/2.1.0 (Linux; U; Android 12; V2366GA Build/55cac2b.0)
+    Host: wwyd.vip.hnhxzkj.com
+  requestType: json
+  is_run:
+  data:
+    type: game_two
+  dependence_case: false
+  dependence_case_data:
+  assert:
+    code:
+      jsonpath: $.code
+      type: ==
+      value: 0
+      AssertType:
+    msg:
+      jsonpath: $.msg
+      type: ==
+      value: ok
+      AssertType:
+  sql:
+  extract:
+
+case_common_24 :
+  allureEpic: 接口自动化测试
+  allureFeature: 兔子模块
+  allureStory: 小游戏2结算
+兔子_24:
+  host: ${{host()}}
+  url: /api/user/game_over
+  method: POST
+  detail: 测试小游戏2结算
+  headers:
+    User-Agent: Dalvik/2.1.0 (Linux; U; Android 12; V2366GA Build/55cac2b.0)
+    Host: wwyd.vip.hnhxzkj.com
+  requestType: json
+  is_run:
+  data:
+    type: game_two
+    score: '1'
+  dependence_case: false
+  dependence_case_data:
+  assert:
+    code:
+      jsonpath: $.code
+      type: ==
+      value: 0
+      AssertType:
+    msg:
+      jsonpath: $.msg
+      type: ==
+      value: ok
+      AssertType:
+  sql:
+  extract:
+
+兔子_25:
+  host: ${{host()}}
+  url: /api/user/game_start
+  method: POST
+  detail: 测试开启小游戏3
+  headers:
+    User-Agent: Dalvik/2.1.0 (Linux; U; Android 12; V2366GA Build/55cac2b.0)
+    Host: wwyd.vip.hnhxzkj.com
+  requestType: json
+  is_run:
+  data:
+    type: game_three
+  dependence_case: false
+  dependence_case_data:
+  assert:
+    code:
+      jsonpath: $.code
+      type: ==
+      value: 0
+      AssertType:
+    msg:
+      jsonpath: $.msg
+      type: ==
+      value: ok
+      AssertType:
+  sql:
+  extract:
+
+兔子_26:
+  host: ${{host()}}
+  url: /api/user/game_over
+  method: POST
+  detail: 测试小游戏3结算
+  headers:
+    User-Agent: Dalvik/2.1.0 (Linux; U; Android 12; V2366GA Build/55cac2b.0)
+    Host: wwyd.vip.hnhxzkj.com
+  requestType: json
+  is_run:
+  data:
+    type: game_three
+    score: '1'
+  dependence_case: false
+  dependence_case_data:
+  assert:
+    code:
+      jsonpath: $.code
+      type: ==
+      value: 0
+      AssertType:
+    msg:
+      jsonpath: $.msg
+      type: ==
+      value: ok
+      AssertType:
+  sql:
+  extract:
+
+兔子_27:
+  host: ${{host()}}
+  url: /api/user/game_start
+  method: POST
+  detail: 测试开启-无小游戏序号
+  headers:
+    User-Agent: Dalvik/2.1.0 (Linux; U; Android 12; V2366GA Build/55cac2b.1)
+    Host: wwyd.vip.hnhxzkj.com
+  requestType: json
+  is_run:
+  data:
+    type: ''
+  dependence_case: false
+  dependence_case_data:
+  assert:
+    code:
+      jsonpath: $.code
+      type: ==
+      value: 500
+      AssertType:
+    msg:
+      jsonpath: $.msg
+      type: ==
+      value: 游戏类型错误
+      AssertType:
+    data:
+      jsonpath: $.data
+      type: ==
+      value: []
+      AssertType:
+  sql:
+  extract:
+
+兔子_28:
+  host: ${{host()}}
+  url: /api/user/game_start
+  method: POST
+  detail: 测试开启-小游戏序号参数类型错误
+  headers:
+    User-Agent: Dalvik/2.1.0 (Linux; U; Android 12; V2366GA Build/55cac2b.1)
+    Host: wwyd.vip.hnhxzkj.com
+  requestType: json
+  is_run:
+  data:
+    type: game_1
+  dependence_case: false
+  dependence_case_data:
+  assert:
+    code:
+      jsonpath: $.code
+      type: ==
+      value: 500
+      AssertType:
+    msg:
+      jsonpath: $.msg
+      type: ==
+      value: 游戏类型错误
+      AssertType:
+    data:
+      jsonpath: $.data
+      type: ==
+      value: []
+      AssertType:
+  sql:
+  extract:
+
+兔子_29:
+  host: ${{host()}}
+  url: /api/user/game_start
+  method: POST
+  detail: 测试异常-type为无效值
+  headers:
+    User-Agent: Dalvik/2.1.0 (Linux; U; Android 12; V2366GA Build/55cac2b.1)
+    Host: wwyd.vip.hnhxzkj.com
+  requestType: json
+  is_run:
+  data:
+    type: game_four
+  dependence_case: false
+  dependence_case_data:
+  assert:
+    code:
+      jsonpath: $.code
+      type: ==
+      value: 500
+      AssertType:
+    msg:
+      jsonpath: $.msg
+      type: ==
+      value: 游戏类型错误
+      AssertType:
+    data:
+      jsonpath: $.data
+      type: ==
+      value: []
+      AssertType:
+  sql:
+  extract:
+
+兔子_30:
+  host: ${{host()}}
+  url: /api/user/game_start
+  method: POST
+  detail: 测试异常-type参数缺失
+  headers:
+    User-Agent: Dalvik/2.1.0 (Linux; U; Android 12; V2366GA Build/55cac2b.1)
+    Host: wwyd.vip.hnhxzkj.com
+  requestType: json
+  is_run:
+  data: {}
+  dependence_case: false
+  dependence_case_data:
+  assert:
+    code:
+      jsonpath: $.code
+      type: ==
+      value: 500
+      AssertType:
+    msg:
+      jsonpath: $.msg
+      type: ==
+      value: 游戏类型错误
+      AssertType:
+    data:
+      jsonpath: $.data
+      type: ==
+      value: []
+      AssertType:
+  sql:
+  extract:
+
+兔子_31:
+  host: ${{host()}}
+  url: /api/user/game_start
+  method: POST
+  detail: 测试异常-type类型错误（数字而非字符串）
+  headers:
+    User-Agent: Dalvik/2.1.0 (Linux; U; Android 12; V2366GA Build/55cac2b.1)
+    Host: wwyd.vip.hnhxzkj.com
+  requestType: json
+  is_run:
+  data:
+    type: 1
+  dependence_case: false
+  dependence_case_data:
+  assert:
+    code:
+      jsonpath: $.code
+      type: ==
+      value: 500
+      AssertType:
+    msg:
+      jsonpath: $.msg
+      type: ==
+      value: 游戏类型错误
+      AssertType:
+    data:
+      jsonpath: $.data
+      type: ==
+      value: []
+      AssertType:
+  sql:
+  extract:

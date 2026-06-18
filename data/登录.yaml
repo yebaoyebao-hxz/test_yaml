@@ -1,0 +1,66 @@
+case_common_1:
+  allureEpic: 接口自动化测试
+  allureFeature: 登录模块
+  allureStory: 登录验证码
+登录_01:
+  host: ${{host()}}
+  url: /api/login/index
+  method: POST
+  detail: 测试登录验证码
+  headers:
+    User-Agent: Dalvik/2.1.0 (Linux; U; Android 12; V2366GA Build/55cac2b.0)
+    Host: wwyd.vip.hnhxzkj.com
+  requestType: json
+  is_run:
+  data:
+    platform: 4
+    phone: '132245677747'
+    sms_code: '1111'
+  dependence_case: false
+  dependence_case_data:
+  assert:
+    code:
+      jsonpath: $.code
+      type: ==
+      value: 0
+      AssertType:
+    msg:
+      jsonpath: $.msg
+      type: ==
+      value: ok
+      AssertType:
+  sql:
+  extract:
+
+case_common:
+  allureEpic: 接口自动化测试
+  allureFeature: 登录模块
+  allureStory: 开启小游戏1
+登录_02:
+  host: ${{host()}}
+  url: /api/user/game_start
+  method: POST
+  detail: 测试开启小游戏1
+  headers:
+    User-Agent: Dalvik/2.1.0 (Linux; U; Android 12; V2366GA Build/55cac2b.0)
+    Host: wwyd.vip.hnhxzkj.com
+  requestType: json
+  is_run:
+  data:
+    type: game_one
+  dependence_case: false
+  dependence_case_data:
+  assert:
+    code:
+      jsonpath: $.code
+      type: ==
+      value: 0
+      AssertType:
+    msg:
+      jsonpath: $.msg
+      type: ==
+      value: ok
+      AssertType:
+  sql:
+  extract:
+

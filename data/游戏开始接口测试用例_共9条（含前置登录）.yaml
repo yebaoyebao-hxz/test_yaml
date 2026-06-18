@@ -1,0 +1,234 @@
+游戏开始接口测试用例_共8条
+
+case_common:
+  allureEpic: 游戏模块
+  allureFeature: 游戏启动
+  allureStory: 验证游戏启动接口功能
+
+game_start_01:
+  host: https://wwyd.vip.hnhxzkj.com
+  url: /api/user/game_start
+  method: POST
+  detail: 正常启动游戏-正确类型参数
+  headers:
+    User-Agent: 'Apifox/1.0.0 (https://apifox.com)'
+    Content-Type: 'application/json'
+    Accept: '*/*'
+    Host: 'wwyd.vip.hnhxzkj.com'
+    Connection: 'keep-alive'
+    Authorization: 'Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJ3ZWJtYW4udGlueXdhbi5jbiIsImF1ZCI6IndlYm1hbi50aW55d2FuLmNuIiwiaWF0IjoxNzc4NTY2OTM1LCJuYmYiOjE3Nzg1NjY5MzUsImV4cCI6MjY0MjU2NjkzNSwiZXh0ZW5kIjp7ImlkIjoxMjM3MTQsImFjY2Vzc19leHAiOjg2NDAwMDAwMCwicmVmcmVzaF9leHAiOjg2NDAwMDAwMCwibmFtZSI6bnVsbCwiY2xpZW50IjoiTU9CSUxFIn19.zAufEiNA3hPPkRq9IDh6zTWnCSGath01KnANugl3raQ'
+  is_run:
+  data:
+    type: 0
+  dependence_case: False
+  dependence_case_data:
+  assert:
+    code:
+      jsonpath: $.code
+      type: ==
+      value: '0'
+      AssertType:
+
+    status_code: 200
+game_start_02:
+  host: https://wwyd.vip.hnhxzkj.com
+  url: /api/user/game_start
+  method: POST
+  detail: 参数缺失-type字段为空
+  headers:
+    User-Agent: 'Apifox/1.0.0 (https://apifox.com)'
+    Content-Type: 'application/json'
+    Accept: '*/*'
+    Host: 'wwyd.vip.hnhxzkj.com'
+    Connection: 'keep-alive'
+    Authorization: 'Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJ3ZWJtYW4udGlueXdhbi5jbiIsImF1ZCI6IndlYm1hbi50aW55d2FuLmNuIiwiaWF0IjoxNzc4NTY2OTM1LCJuYmYiOjE3Nzg1NjY5MzUsImV4cCI6MjY0MjU2NjkzNSwiZXh0ZW5kIjp7ImlkIjoxMjM3MTQsImFjY2Vzc19leHAiOjg2NDAwMDAwMCwicmVmcmVzaF9leHAiOjg2NDAwMDAwMCwibmFtZSI6bnVsbCwiY2xpZW50IjoiTU9CSUxFIn19.zAufEiNA3hPPkRq9IDh6zTWnCSGath01KnANugl3raQ'
+  is_run:
+  data:
+    type: ''
+  dependence_case: False
+  dependence_case_data:
+  assert:
+    code:
+      jsonpath: $.code
+      type: ==
+      value: '500'
+      AssertType:
+    msg:
+      jsonpath: $.msg
+      type: ==
+      value: '游戏类型错误'
+      AssertType:
+
+    status_code: 200
+game_start_03:
+  host: https://wwyd.vip.hnhxzkj.com
+  url: /api/user/game_start
+  method: POST
+  detail: 边界值-type=最大整数
+  headers:
+    User-Agent: 'Apifox/1.0.0 (https://apifox.com)'
+    Content-Type: 'application/json'
+    Accept: '*/*'
+    Host: 'wwyd.vip.hnhxzkj.com'
+    Connection: 'keep-alive'
+    Authorization: 'Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJ3ZWJtYW4udGlueXdhbi5jbiIsImF1ZCI6IndlYm1hbi50aW55d2FuLmNuIiwiaWF0IjoxNzc4NTY2OTM1LCJuYmYiOjE3Nzg1NjY5MzUsImV4cCI6MjY0MjU2NjkzNSwiZXh0ZW5kIjp7ImlkIjoxMjM3MTQsImFjY2Vzc19leHAiOjg2NDAwMDAwMCwicmVmcmVzaF9leHAiOjg2NDAwMDAwMCwibmFtZSI6bnVsbCwiY2xpZW50IjoiTU9CSUxFIn19.zAufEiNA3hPPkRq9IDh6zTWnCSGath01KnANugl3raQ'
+  is_run:
+  data:
+    type: 2147483647
+  dependence_case: False
+  dependence_case_data:
+  assert:
+    code:
+      jsonpath: $.code
+      type: ==
+      value: '500'
+      AssertType:
+    msg:
+      jsonpath: $.msg
+      type: ==
+      value: '游戏类型错误'
+      AssertType:
+
+    status_code: 200
+game_start_04:
+  host: https://wwyd.vip.hnhxzkj.com
+  url: /api/user/game_start
+  method: POST
+  detail: 特殊字符-type=包含特殊字符的字符串
+  headers:
+    User-Agent: 'Apifox/1.0.0 (https://apifox.com)'
+    Content-Type: 'application/json'
+    Accept: '*/*'
+    Host: 'wwyd.vip.hnhxzkj.com'
+    Connection: 'keep-alive'
+    Authorization: 'Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJ3ZWJtYW4udGlueXdhbi5jbiIsImF1ZCI6IndlYm1hbi50aW55d2FuLmNuIiwiaWF0IjoxNzc4NTY2OTM1LCJuYmYiOjE3Nzg1NjY5MzUsImV4cCI6MjY0MjU2NjkzNSwiZXh0ZW5kIjp7ImlkIjoxMjM3MTQsImFjY2Vzc19leHAiOjg2NDAwMDAwMCwicmVmcmVzaF9leHAiOjg2NDAwMDAwMCwibmFtZSI6bnVsbCwiY2xpZW50IjoiTU9CSUxFIn19.zAufEiNA3hPPkRq9IDh6zTWnCSGath01KnANugl3raQ'
+  is_run:
+  data:
+    type: 'abc!@#'
+  dependence_case: False
+  dependence_case_data:
+  assert:
+    code:
+      jsonpath: $.code
+      type: ==
+      value: '500'
+      AssertType:
+    msg:
+      jsonpath: $.msg
+      type: ==
+      value: '游戏类型错误'
+      AssertType:
+
+    status_code: 200
+game_start_05:
+  host: https://wwyd.vip.hnhxzkj.com
+  url: /api/user/game_start
+  method: POST
+  detail: 并发请求-同时发送两个相同请求
+  headers:
+    User-Agent: 'Apifox/1.0.0 (https://apifox.com)'
+    Content-Type: 'application/json'
+    Accept: '*/*'
+    Host: 'wwyd.vip.hnhxzkj.com'
+    Connection: 'keep-alive'
+    Authorization: 'Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJ3ZWJtYW4udGlueXdhbi5jbiIsImF1ZCI6IndlYm1hbi50aW55d2FuLmNuIiwiaWF0IjoxNzc4NTY2OTM1LCJuYmYiOjE3Nzg1NjY5MzUsImV4cCI6MjY0MjU2NjkzNSwiZXh0ZW5kIjp7ImlkIjoxMjM3MTQsImFjY2Vzc19leHAiOjg2NDAwMDAwMCwicmVmcmVzaF9leHAiOjg2NDAwMDAwMCwibmFtZSI6bnVsbCwiY2xpZW50IjoiTU9CSUxFIn19.zAufEiNA3hPPkRq9IDh6zTWnCSGath01KnANugl3raQ'
+  is_run:
+  data:
+    type: 0
+  dependence_case: False
+  dependence_case_data:
+  assert:
+    code:
+      jsonpath: $.code
+      type: ==
+      value: '0'
+      AssertType:
+
+    status_code: 200
+game_start_06:
+  host: https://wwyd.vip.hnhxzkj.com
+  url: /api/user/game_start
+  method: POST
+  detail: Token为空-移除Authorization头
+  headers:
+    User-Agent: 'Apifox/1.0.0 (https://apifox.com)'
+    Content-Type: 'application/json'
+    Accept: '*/*'
+    Host: 'wwyd.vip.hnhxzkj.com'
+    Connection: 'keep-alive'
+  is_run:
+  data:
+    type: 0
+  dependence_case: False
+  dependence_case_data:
+  assert:
+    code:
+      jsonpath: $.code
+      type: ==
+      value: '401'
+      AssertType:
+    msg:
+      jsonpath: $.msg
+      type: ==
+      value: '请求未携带authorization信息'
+      AssertType:
+
+    status_code: 200
+game_start_07:
+  host: https://wwyd.vip.hnhxzkj.com
+  url: /api/user/game_start
+  method: POST
+  detail: 参数异常-type为非数字类型
+  headers:
+    User-Agent: 'Apifox/1.0.0 (https://apifox.com)'
+    Content-Type: 'application/json'
+    Accept: '*/*'
+    Host: 'wwyd.vip.hnhxzkj.com'
+    Connection: 'keep-alive'
+    Authorization: 'Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJ3ZWJtYW4udGlueXdhbi5jbiIsImF1ZCI6IndlYm1hbi50aW55d2FuLmNuIiwiaWF0IjoxNzc4NTY2OTM1LCJuYmYiOjE3Nzg1NjY5MzUsImV4cCI6MjY0MjU2NjkzNSwiZXh0ZW5kIjp7ImlkIjoxMjM3MTQsImFjY2Vzc19leHAiOjg2NDAwMDAwMCwicmVmcmVzaF9leHAiOjg2NDAwMDAwMCwibmFtZSI6bnVsbCwiY2xpZW50IjoiTU9CSUxFIn19.zAufEiNA3hPPkRq9IDh6zTWnCSGath01KnANugl3raQ'
+  is_run:
+  data:
+    type: 'abc'
+  dependence_case: False
+  dependence_case_data:
+  assert:
+    code:
+      jsonpath: $.code
+      type: ==
+      value: '500'
+      AssertType:
+    msg:
+      jsonpath: $.msg
+      type: ==
+      value: '游戏类型错误'
+      AssertType:
+
+    status_code: 200
+game_start_08:
+  host: https://wwyd.vip.hnhxzkj.com
+  url: /api/user/game_start
+  method: POST
+  detail: 请求体为空
+  headers:
+    User-Agent: 'Apifox/1.0.0 (https://apifox.com)'
+    Content-Type: 'application/json'
+    Accept: '*/*'
+    Host: 'wwyd.vip.hnhxzkj.com'
+    Connection: 'keep-alive'
+    Authorization: 'Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJ3ZWJtYW4udGlueXdhbi5jbiIsImF1ZCI6IndlYm1hbi50aW55d2FuLmNuIiwiaWF0IjoxNzc4NTY2OTM1LCJuYmYiOjE3Nzg1NjY5MzUsImV4cCI6MjY0MjU2NjkzNSwiZXh0ZW5kIjp7ImlkIjoxMjM3MTQsImFjY2Vzc19leHAiOjg2NDAwMDAwMCwicmVmcmVzaF9leHAiOjg2NDAwMDAwMCwibmFtZSI6bnVsbCwiY2xpZW50IjoiTU9CSUxFIn19.zAufEiNA3hPPkRq9IDh6zTWnCSGath01KnANugl3raQ'
+  is_run:
+  data:
+  dependence_case: False
+  dependence_case_data:
+  assert:
+    code:
+      jsonpath: $.code
+      type: ==
+      value: '500'
+      AssertType:
+    msg:
+      jsonpath: $.msg
+      type: ==
+      value: '游戏类型错误'
+      AssertType:
+    status_code: 200

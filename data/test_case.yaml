@@ -1,0 +1,173 @@
+case_common:
+  allureEpic: 直播弹幕系统
+  allureFeature: 评论通知
+  allureStory: 发送评论通知接口
+
+comment_notify_01:
+  host: https://zs-bjfyl-dy.danmu.hxzdm.com
+  url: /douyin/webcast/comment_notify
+  method: POST
+  detail: 正常发送一条评论通知
+  headers:
+    Content-Type: application/json;charset=utf-8
+    User-Agent: 'UnityPlayer/2023.1.13f1 (UnityWebRequest/1.0, libcurl/8.1.1-DEV)'
+    Accept-Encoding: 'deflate, gzip'
+    x-roomid: '12321'
+    X-Unity-Version: '2023.1.13f1'
+  is_run:
+  data:
+    - msg_id: 'HuaXianZi_0'
+      sec_openid: 'test_1'
+      content: '加入曹'
+      avatar_url: ''
+      nickname: 'test_1'
+      timestamp: 1781248992638
+  dependence_case: False
+  dependence_case_data:
+  assert:
+    code:
+      jsonpath: $.code
+      type: ==
+      value: '00000'
+      AssertType:
+    msg:
+      jsonpath: $.msg
+      type: ==
+      value: ok
+      AssertType:
+  sql:
+
+comment_notify_02:
+  host: https://zs-bjfyl-dy.danmu.hxzdm.com
+  url: /douyin/webcast/comment_notify
+  method: POST
+  detail: 缺少必填字段msg_id
+  headers:
+    Content-Type: application/json;charset=utf-8
+    User-Agent: 'UnityPlayer/2023.1.13f1 (UnityWebRequest/1.0, libcurl/8.1.1-DEV)'
+    Accept-Encoding: 'deflate, gzip'
+    x-roomid: '12321'
+    X-Unity-Version: '2023.1.13f1'
+  is_run:
+  data:
+    - sec_openid: 'test_1'
+      content: '缺少msg_id'
+      avatar_url: ''
+      nickname: 'test_1'
+      timestamp: 1781248992638
+  dependence_case: False
+  dependence_case_data:
+  assert:
+    code:
+      jsonpath: $.code
+      type: ==
+      value: '10001'
+      AssertType:
+    msg:
+      jsonpath: $.msg
+      type: ==
+      value: 'msg_id不能为空'
+      AssertType:
+  sql:
+
+comment_notify_03:
+  host: https://zs-bjfyl-dy.danmu.hxzdm.com
+  url: /douyin/webcast/comment_notify
+  method: POST
+  detail: content字段边界值-最长字符
+  headers:
+    Content-Type: application/json;charset=utf-8
+    User-Agent: 'UnityPlayer/2023.1.13f1 (UnityWebRequest/1.0, libcurl/8.1.1-DEV)'
+    Accept-Encoding: 'deflate, gzip'
+    x-roomid: '12321'
+    X-Unity-Version: '2023.1.13f1'
+  is_run:
+  data:
+    - msg_id: 'HuaXianZi_1'
+      sec_openid: 'test_1'
+      content: 'a' * 500  # 假设最大长度500
+      avatar_url: ''
+      nickname: 'test_1'
+      timestamp: 1781248992638
+  dependence_case: False
+  dependence_case_data:
+  assert:
+    code:
+      jsonpath: $.code
+      type: ==
+      value: '00000'
+      AssertType:
+    msg:
+      jsonpath: $.msg
+      type: ==
+      value: ok
+      AssertType:
+  sql:
+
+comment_notify_04:
+  host: https://zs-bjfyl-dy.danmu.hxzdm.com
+  url: /douyin/webcast/comment_notify
+  method: POST
+  detail: content包含特殊字符和emoji
+  headers:
+    Content-Type: application/json;charset=utf-8
+    User-Agent: 'UnityPlayer/2023.1.13f1 (UnityWebRequest/1.0, libcurl/8.1.1-DEV)'
+    Accept-Encoding: 'deflate, gzip'
+    x-roomid: '12321'
+    X-Unity-Version: '2023.1.13f1'
+  is_run:
+  data:
+    - msg_id: 'HuaXianZi_2'
+      sec_openid: 'test_2'
+      content: '😊测试<script>alert(1)</script><>&"'''
+      avatar_url: ''
+      nickname: 'nick_测试'
+      timestamp: 1781248992638
+  dependence_case: False
+  dependence_case_data:
+  assert:
+    code:
+      jsonpath: $.code
+      type: ==
+      value: '00000'
+      AssertType:
+    msg:
+      jsonpath: $.msg
+      type: ==
+      value: ok
+      AssertType:
+  sql:
+
+comment_notify_05:
+  host: https://zs-bjfyl-dy.danmu.hxzdm.com
+  url: /douyin/webcast/comment_notify
+  method: POST
+  detail: 重复发送相同msg_id的评论
+  headers:
+    Content-Type: application/json;charset=utf-8
+    User-Agent: 'UnityPlayer/2023.1.13f1 (UnityWebRequest/1.0, libcurl/8.1.1-DEV)'
+    Accept-Encoding: 'deflate, gzip'
+    x-roomid: '12321'
+    X-Unity-Version: '2023.1.13f1'
+  is_run:
+  data:
+    - msg_id: 'HuaXianZi_0'
+      sec_openid: 'test_1'
+      content: '重复评论'
+      avatar_url: ''
+      nickname: 'test_1'
+      timestamp: 1781248992638
+  dependence_case: False
+  dependence_case_data:
+  assert:
+    code:
+      jsonpath: $.code
+      type: ==
+      value: '00000'
+      AssertType:
+    msg:
+      jsonpath: $.msg
+      type: ==
+      value: ok
+      AssertType:
+  sql:
