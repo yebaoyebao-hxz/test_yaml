@@ -1,0 +1,1361 @@
+
+syntax = "proto3";
+option csharp_namespace = "GameServerProto";
+package msg;
+option go_package = "./msg";
+
+// http 协议 ----------------------------------------------------------------
+
+// 抖音登录 /game/douyin/anchor_login
+message ReqToken {
+    string token = 1;
+}
+message ResDouYinAnchorLogin{
+    string msg = 1;
+    // 游戏的token用于websocket登录
+    string token = 2;
+    // 用户在平台的 id
+    int64 id = 3;
+    // 抖音房间号
+    int64  roomId = 4;
+    // 主播的 openId
+	string anchorOpenId = 5;
+    // 主播头像
+	string avatarUrl = 6; 
+    // 主播昵称
+	string nickname = 7;
+}
+
+// 快手登录 /game/kuaishou/anchor_login
+message ReqKuaiShouRoomCode {
+    string roomCode = 1;
+}
+message ResKuaiShouAnchorLogin{
+    string msg = 1;
+    // 游戏的token用于websocket登录
+    string token = 2;
+    // 用户在平台的 id
+    int64 id = 3;
+    // 主播的 openId
+	string anchorOpenId = 4;
+    // 主播头像
+	string avatarUrl = 5;
+    // 主播昵称
+	string nickname = 6;
+}
+
+// ai 主播登录 /game/douyin/anchor_register
+message ReqRegisterAnchorLogin {
+	// 自定义房间号
+	int64  roomId = 1;
+}
+
+// 房间状态
+enum RoomStatus {
+	ROOM_STATUS_UNKNOWN = 0;
+	ROOM_STATUS_WAITING = 1;
+	ROOM_STATUS_GAMING = 2;
+}
+
+// 阵营
+enum PlayerGroup{
+	GROUP_UNKNOWN = 0;
+	// 左边
+	Left = 1;
+	// 右边
+	Right = 2;
+	// 阵营最大数量
+	GROUP_MAX = 3;
+}
+
+// --------------------------------------------开房间 PK -----------------------------------------------------
+enum Error{
+	E_Sucess = 0;
+	E_Param=1;
+	E_TokenExpire=2;
+	E_NoPlayer=3;
+	E_NoInMatchLobby=4;
+	E_InviteMyself=5;
+	E_AlreadyInQuicMatch=6;
+	E_AlreadyInPK=7;
+	E_NoRoom=8;
+	E_PlayerNotEnough=9;
+	E_NotMaster=10;
+	E_RoomFull=11;
+	E_RoomPwdError=12;
+	E_AlreadyGameJoin=13;
+}
+
+enum Module {
+	M_Unknow = 0;
+	// 网关模块
+	M_Gate = 5;
+	// 用户模块
+	M_User = 10;
+	// 匹配模块
+	M_Matching=100;
+	// 游戏模块
+	M_Game = 200;
+}
+
+// 网关模块 ----------------------------------------------------------------------------------------------------------
+enum GateCmd {
+	GateCmd_Unknow = 0;
+
+	// 客户端
+	// 心跳
+	GateCmd_Heartbeat = 5;
+}
+
+// 用户模块 ----------------------------------------------------------------------------------------------------------
+enum UserCmd {
+	UserCmd_Unknow = 0;
+
+	// 客户端
+	// 客户端连上后发送，拿取邀请码 ReqUserInfo ResUserInfo
+	UserInfo=1;
+
+	// 服务器使用
+	UserExit=24;
+	// 通知月排行第一名玩家落坐（模块间通信） ReqNotifyMonthRankFirstJoin
+	NotifyMonthRankFirstJoin=25;
+}
+
+message BaseUser {
+    uint64 userId = 1;
+    string nickName = 2;
+    string head = 3;
+	string openId = 4;
+	// 快手的 roomCode 抖音的 roomId
+	string roomCode = 5;
+	// 是否在线
+	bool online = 6;
+	// 邀请码
+	string inviteCode = 7;
+	// 星数
+	int64 levelStar = 8;
+}
+
+message ReqUserInfo {
+	string token = 1;
+	// 快手的 roomCode 抖音的 roomId
+	string roomCode = 2;
+}
+message ResUserInfo {
+	Error errCode = 1;
+	// 邀请码
+	string inviteCode = 2;
+	// 星数
+	int64 levelStar = 3;
+	// 当日投降次数
+	int64 surrenderCount = 4;
+	// 连胜次数
+	int64 winCount = 5;
+}
+
+// 通知月排行第一名玩家落坐请求（模块间通信）
+message ReqNotifyMonthRankFirstJoin {
+	string secOpenid = 1;   // 玩家 openid
+	string nickname = 2;     // 玩家昵称
+	string avatarUrl = 3;    // 玩家头像
+	int64 notifyType = 4;   // 通知类型 0:月排行 1:周排行
+}
+
+
+// 匹配模块 ----------------------------------------------------------------------------------------------------------
+enum MatchingCmd {
+	MatchingCmd_Unknow = 0;
+
+	// 客户端
+	// 匹配
+	// 加入大厅 无请求体 ResMatchJoinExit
+	MatchingCmd_JoinLobby=1;
+	// 退出大厅 无请求体 ResMatchJoinExit
+	MatchingCmd_ExitLobby=2;
+	// 加入快速匹配 无请求体 ResMatchQuick
+	MatchingCmd_JoinQuick = 3;
+	// 退出快速匹配 无请求体 ResMatchQuick
+	MatchingCmd_ExitQuick = 4;
+	// 邀请 ReqMatchInvite ResMatchInvite
+	MatchingCmd_Invite=5;
+	// 邀请结果处理 ReqMatchInviteResult ResMatchInviteResult
+	MatchingCmd_InviteResult=6;
+	// 开麦 无请求体 ResMatchEmpty
+	MatchingCmd_OpenMike=7;
+	// 关麦 无请求体 ResMatchEmpty
+	MatchingCmd_CloseMike=8;
+	// 匿名 无请求体 ResMatchEmpty
+	MatchingCmd_Anonymous=9;
+	// 取消匿名 无请求体 ResMatchEmpty
+	MatchingCmd_UnAnonymous=10;
+	// 通知客户端进入游戏 ResMatchGameIn 只接收
+	MatchingCmd_GameIn = 35;
+	// 查看匹配大厅玩家 无请求体 ResMatchLobbyUserList
+	MatchingCmd_LobbyUserList = 36;
+	// 玩家匿名 无请求体 ResMatchEmpty
+	MatchingCmd_PlayAnonymous = 37;
+	// 玩家取消匿名 无请求体 ResMatchEmpty
+	MatchingCmd_UnPlayAnonymous = 38;
+	// 段位匿名 无请求体 ResMatchEmpty
+	MatchingCmd_RankAnonymous = 39;
+	// 段位取消匿名 无请求体 ResMatchEmpty
+	MatchingCmd_UnRankAnonymous = 40;
+	// 房间列表 无请求体 ResMatchRoomList
+	MatchingCmd_RoomList = 41;
+	// 开始游戏 无请求体 ResMatchEmpty
+	MatchingCmd_StartGame = 42;
+	// 加入房间 ReqMatchJoinRoom ResMatchJoinRoom
+	MatchingCmd_JoinRoom = 43;
+	// 退出房间 无请求体  ResMatchExitRoom
+	MatchingCmd_UserExitRoom = 44;
+	// 踢人 ReqMatchKickRoomUser ResMatchKickRoomUser
+	MatchingCmd_KickRoomUser = 45;
+	// 房间邀请 ReqMatchInviteRoom ResMatchInviteRoom
+	MatchingCmd_InviteRoom = 46;
+	// 设置房间密码 ReqMatchSetRoomPwd ResMatchSetRoomPwd
+	MatchingCmd_SetRoomPwd = 47;
+	// 房间内开麦闭麦 ReqMatchRoomOpenMike ResMatchRoomOpenMike
+	MatchingCmd_RoomOpenMike = 48;
+	// 查看房间内开麦信息 ReqRoomOpenMikeInfo ResRoomOpenMikeInfo
+	MatchingCmd_RoomOpenMikeInfo = 49;
+
+	// 客户端
+	// 单人多人，根据参数不同创建
+	// 创建房间 ReqCreateRoom ResCreateRoom
+	MatchingCmd_CreateRoom = 50;
+	// 房间设置创建房间后设置 ReqMatchRoomOption ResMatchRoomOption
+	MatchingCmd_RoomOption = 51;
+	// 请求更换位置 ReqMatchRoomChangePosition ResMatchRoomChangePosition
+	MatchingCmd_RoomChangePosition = 52;
+	// 处理请求换位结果 ReqMatchHandleRoomChangePosition ResMatchHandleRoomChangePosition
+	MatchingCmd_HandleRoomChangePosition = 53;
+	// 请求房间详细信息 ReqMatchRoomDetailInfo ResMatchRoomDetailInfo
+	MatchingCmd_MatchRoomDeatilInfo = 54;
+	// 客户端
+	// 查询房间 ReqCheckRoom ResCheckRoom
+	MatchingCmd_CheckRoom = 100;
+
+	// 服务端
+	// 游戏结束从游戏模块过来 ResGameOutRoom
+	MatchingCmd_OutGame=1000;
+	// 游戏断线退出时通知游戏模块
+	MatchingCmd_ExitRoom=1001;
+	// 通知客户端进入游戏，从游戏模块过来，然后用MatchingCmd_GameIn通知客户端进入游戏 请求： ResGameStart
+	MatchingCmd_NotifyGameIn=1002;
+	// 创建邀请的房间邀请同意后自己通知自己 ReqMatchCreateInviteRoom
+	MatchingCmd_CreateInviteRoom=1003;
+}
+
+message ResMatchEmpty {
+	Error errCode = 1;
+}
+
+message MatchUser {
+	BaseUser user = 1;
+	bool openMike = 2;
+	bool anonymous = 3;
+	// 玩家是否匿名
+	bool playAnonymous = 4;
+	// 段位是否匿名
+	bool rankAnonymous = 5;
+	// 主播阵营
+	PlayerGroup group = 6;
+	// 主播积分池
+	int64 scorePool = 7;
+}
+
+message RoomInfo {
+    // 房间号，游戏自己的不是抖音的
+    int64 roomId = 1;
+    // 房主的用户编号
+    uint64 masterId = 2;
+    // 房间里的用户
+    repeated MatchUser users = 3;
+	// 是否为对决
+	bool duel = 4;
+	// 是否为快速匹配
+	bool quickMatch = 5;
+	// 难度编号 DifficultyLevelConfig.xlsx DifficultyLevel
+	int64 DifficultyLevel = 6;
+	// 密码
+	string pwd = 8;
+	// 房间状态
+	RoomStatus roomStatus = 9;
+	// 是否有机器人
+	bool hasRobot = 10;
+	// 是否可以观战
+	bool canWatch = 11;
+}
+
+message ReqMatchJoinRoom {
+	// 房间号，游戏自己的不是抖音的
+    int64 roomId = 1;
+	// 密码
+	string pwd = 2;
+}
+
+message ResMatchJoinRoom {
+	Error errCode = 1;
+	RoomInfo rooms = 2;
+}
+
+message ResMatchExitRoom {
+	Error errCode = 1;
+	uint64 exitUserId = 2;
+	// 是否解散房间
+	bool dissolve = 3;
+}
+
+message ResMatchRoomList{
+	Error errCode = 1;
+	repeated RoomInfo rooms = 2;
+}
+
+message ReqMatchKickRoomUser{
+	uint64 userId = 1;
+}
+message ResMatchKickRoomUser{
+	Error errCode = 1;
+	uint64 userId = 2;
+}
+
+message ReqMatchInviteRoom{
+	// 被邀请人编号
+	uint64 userId = 1;
+	// 房间号，游戏自己的不是抖音的
+    int64 roomId = 2;
+	// 密码
+	string pwd = 3;
+}
+message ResMatchInviteRoom{
+	Error errCode = 1;
+	// 邀请人
+	MatchUser inviteUser = 2;
+	// 受邀人
+	MatchUser inviteeUser = 3;
+	// 房间号，游戏自己的不是抖音的
+	int64 roomId = 4;
+	// 密码
+	string pwd = 5;
+}
+
+message ReqMatchSetRoomPwd{
+	// 密码
+	string pwd = 1;
+	// 房间号
+	int64 roomId = 2;
+}
+message ResMatchSetRoomPwd{
+	Error errCode = 1;
+	// 密码
+	string pwd = 2;
+	// 房间号
+	int64 roomId = 3;
+}
+
+message ReqMatchRoomOpenMike{
+	// 房间号
+	int64 roomId = 1;
+}
+message ResMatchRoomOpenMike{
+	Error errCode = 1;
+	// 房间号
+	int64 roomId = 2;
+	// 用户
+	uint64 userId = 3;
+	// 麦状态
+	bool mikeStatus = 4;
+}
+
+message ReqRoomOpenMikeInfo{
+	// 房间号
+	int64 roomId = 1;
+}
+
+message MatchRoomOpenMikeInfo {
+	uint64 userId = 1;
+	bool mikeStatus = 2;
+}
+message ResRoomOpenMikeInfo{
+	Error errCode = 1;
+	// 房间号
+	int64 roomId = 2;
+	// 开麦信息
+	repeated MatchRoomOpenMikeInfo openMikeInfos = 3;
+}
+
+message ResMatchQuick {
+	Error errCode = 1;
+}
+
+message ResMatchLobbyUserList{
+	Error errCode = 1;
+
+	repeated MatchUser users = 2;
+}
+
+message ResMatchGameIn{
+	Error errCode = 1;
+
+	RoomInfo room = 2;
+}
+
+message ResMatchJoinExit{
+	Error errCode = 1;
+}
+
+message ReqMatchInvite{
+	// 被邀请人编号
+	uint64 userId = 1;
+}
+message ResMatchInvite{
+	Error errCode = 1;
+	// 邀请人
+	MatchUser inviteUser = 2;
+	// 受邀人
+	MatchUser inviteeUser = 3;
+}
+
+message ReqMatchInviteResult{
+	// 邀请人
+	uint64 inviteUserId = 1;
+	// 受邀人
+	uint64 inviteeUserId = 2;
+	bool result = 3;
+}
+message ResMatchInviteResult{
+	Error errCode = 1;
+	// 邀请人
+	MatchUser inviteUser = 2;
+	// 受邀人
+	MatchUser inviteeUser = 3;
+	bool result = 4;
+	// 房间号
+	int64 roomId = 5;
+}
+
+message ReqMatchCreateInviteRoom{
+	repeated uint64 userIds = 1;
+}
+
+message ReqCheckRoom{
+	// 是否重连
+	bool reconnect = 1;
+}
+message ResCheckRoom{
+	Error errCode = 1;
+	RoomInfo room = 2;
+	// 是否重连
+	bool reconnect = 3;
+}
+
+message ReqMatchRoomOption{
+	string pwd = 1;
+	int64 difficultyLevel = 2;
+	// 是否可以观战
+	bool canWatch = 3;
+}
+message  ResMatchRoomOption{
+	Error errCode = 1;
+	string pwd = 2;
+	int64 difficultyLevel = 3;
+	bool canWatch = 4;
+}
+
+message ReqMatchRoomChangePosition{
+	// 房间号
+	int64 roomId = 1;
+	// 请求换位用户
+	uint64 reqUserId = 2;
+	// 目标用户
+	uint64 targetUserId = 3;
+}
+message ResMatchRoomChangePosition{
+	Error errCode = 1;
+	// 请求换位用户
+	uint64 reqUserId = 2;
+	// 目标用户
+	uint64 targetUserId = 3;
+}
+message ReqMatchHandleRoomChangePosition{
+	// 房间号
+	int64 roomId = 1;
+	// 请求换位用户
+	uint64 reqUserId = 2;
+	// 目标用户
+	uint64 targetUserId = 3;
+	// 结果 true 同意 false 拒绝
+	bool result = 4;
+}
+message ResMatchHandleRoomChangePosition{
+	Error errCode = 1;
+	// 请求换位用户
+	uint64 reqUserId = 2;
+	// 目标用户
+	uint64 targetUserId = 3;
+}
+message ReqMatchRoomDetailInfo{
+	int64 roomId = 1;
+}
+message ResMatchRoomDetailInfo{
+	Error errCode = 1;
+	RoomInfo room = 2;
+}
+message ReqCreateRoom{
+	// 难度编号 DifficultyLevelConfig.xlsx DifficultyLevel
+	int64 DifficultyLevel = 1;
+	// 是否为对决即 pk 单人为 false
+	bool duel = 2;
+	// 密码
+	string pwd = 3;
+}
+
+message ResCreateRoom{
+	Error errCode = 1;
+	RoomInfo room = 2;
+}
+
+message ResGameOutRoom{
+	Error errCode = 1;
+
+	// 房间号，游戏自己的不是抖音的
+    int64 roomId = 2;
+}
+
+// 游戏模块 ----------------------------------------------------------------------------------------------------------
+enum GameCmd {
+	GameCmd_Unknow = 0;
+	// 客户端
+	// 获取用户数据 ReqGameData ResGameData
+	GameCmd_Data = 1;
+	// 入场信息或用户换阵营通知 只接收 ResGamePlayGroup
+	GameCmd_PlayGroup = 2;
+	// 评论消息 只接收 ResGameComment
+	GameCmd_Comment = 3;
+	// 点赞消息 只接收 ResGameLike
+	GameCmd_Like = 4;
+	// 礼物消息 只接收 ResGameGift
+	GameCmd_Gift = 5;
+	// 游戏结束 只有手动请求结束时才发 ReqGameOver ResGameOver
+	GameCmd_Over = 6;
+	// 消息处理完成，抖音点赞，评论，礼物都需要通知服务器完成，快手只需要通知礼物 ReqGameMsgOver
+	GameCmd_MsgOver = 7;
+	// 下一局，只有单人模式才有效果 ReqGameNextRound ResGameData
+	GameCmd_NextRound = 8;
+	// 用户重连 客户端只接收，处理ResGameUserReconnect数据 ResGameUserReconnect
+	GameCmd_User_Reconnect = 9;
+
+	// 客户端排行榜信息
+	// 周排行 无请求体 ResGameWeekRank
+	GameCmd_WeekRank = 10;
+	// 月排行 无请求体 ResGameMonthRank
+	GameCmd_MonthRank = 11;
+	// 主播排行 无请求体 ResGameAnchorRank
+	GameCmd_AnchorRank = 12;
+	// 礼物排行 无请求体 ResGameGiftRank
+	GameCmd_GiftRank = 13;
+	// 同步血量与推力数据 客户端只接收 ResSyncData
+	GameCmd_SyncData = 14;
+	// 主播主动断开 ReqAnchorBreak 无返回体
+	GameCmd_Anchor_Break = 15;
+	// 胜点排行 无请求体 ResGameWinScoreRank
+	GameCmd_WinScore = 16;
+	// 月排行第一名玩家落坐通知 客户端只接收 ResGameMonthRankFirstJoin
+	GameCmd_MonthRankFirstJoin = 17;
+	// 主播投降（仅对决模式） ReqGameSurrender 无返回体
+	GameCmd_Surrender = 18;
+	// 麦克风设置 ReqGameMicSetting ResGameMicSetting
+	GameCmd_MicSetting = 23;
+	// 通知出 hero UnityConfig中的信息，只接收 ResGameNotifyOutHeroUnit
+	GameCmd_NOtifyOutHeroUnit = 24;
+	// 今日最强玩家通知 无请求体 ResGameDayTop
+	GameCmd_DayTop = 25;
+	// 用户重连 查询增量数据，无请求体 ResGameUserReconnectData
+	GameCmd_User_Reconnect_Data = 26;
+	// 名人墙 ReqGameWallName ResGameWallName
+	GameCmd_WallName=27;
+	// 领旗奖励 无请求体 ResGameLingFlagReward
+	GameCmd_LingFlagReward=28;
+	// 加入观战 ReqGameWatchJoin ResGameWatchJoin
+	GameCmd_Watch_Join = 29;
+	// 离开观战 ReqGameWatchLeave ResGameWatchLeave
+	GameCmd_Watch_Leave = 30;
+	// 观战下场 ReqGameWatchJoinGame ResGameWatchJoinGame
+	GameCmd_Watch_Join_Game = 31;
+	// 游戏里邀请其主播 ReqGameInviteAnchor ResGameInviteAnchor
+	GameCmd_Invite_Anchor = 32;
+	// 游戏里邀请主播结果 ReqGameInviteAnchorResult ResGameInviteAnchorResult
+	GameCmd_Invite_Anchor_Result = 33;
+	// 通知主播加入游戏 无请求结构体只接收 ResGameNotifyAnchorJoinGame
+	GameCmd_Notify_Anchor_Join_Game = 34;
+	// 客户端 更新配置通知
+	GameCmd_JsonConfigChange = 90;
+
+	// 服务端
+	// 开始游戏从匹配模块过来，反回给匹配的MatchingCmd_NotifyGameIn ReqGameStart ResGameStart
+	GameCmd_Start=100;
+	// 用户下线通知，从匹配模块 ReqGameUserOffline
+	GameCmd_UserOffline = 101;
+	// 抖音消息
+	// 礼物 ReqGameDyGift
+	GameCmd_Dy_Gift = 102;
+	// 评论 ReqGameDyComment
+	GameCmd_Dy_Comment = 103;
+	// 点赞 ReqGameDyLike
+	GameCmd_Dy_Like = 104;
+	// 粉丝团 ReqGameDyFansclub
+	GameCmd_Dy_Fansclub = 105;
+	// 快手消息 ReqGameKsPushData
+	GameCmd_Ks_PushData = 106;
+	// 销毁房间 ReqGameData
+	GameCmd_Destory = 107; 
+	// 快手扭蛋 ReqGameKsBulletGacha
+	GameCmd_Ks_BulletGacha = 108;
+	// 快手玩法奖励 ReqGameKsRewardNotify
+	GameCmd_Ks_RewardNotify = 109;
+}
+
+message ReqAnchorBreak {
+	// 房间号，游戏自己的不是抖音的
+	int64 roomId = 1;
+}
+
+message ReqGameSurrender {
+	// 房间号，游戏自己的不是抖音的
+	int64 roomId = 1;
+}
+
+message ReqGameMicSetting {
+	// 房间号，游戏自己的不是抖音的
+	int64 roomId = 1;
+	// 麦克风值 0 静音 100 最大
+	int64 mikeValue = 2;
+	// 目标用户
+	uint64 targetUserId = 3;
+}
+
+message ResGameMicSetting {
+	Error errCode = 1;
+	// 房间号，游戏自己的不是抖音的
+	int64 roomId = 2;
+	// 用户id
+	uint64 userId = 3;
+	// 麦克风值 0 静音 100 最大
+	int64 mikeValue = 4;
+	// 目标用户
+	uint64 targetUserId = 5;
+}
+
+message GroupSyncData {
+	PlayerGroup group = 1;
+	// 血量 单位厘米
+	int64 blood = 2;
+	// 推力
+	int64 pushVal = 3;
+	// 胜点池
+	int64 pondWinScore = 4;
+}
+
+message ResSyncData {
+	Error errCode = 1;
+	// 角力游戏中 groupsData 所有的血量加起来等于配置的血量
+	repeated GroupSyncData groupsData = 2;
+	// 积分池数据
+	int64 pondScore = 3;
+}
+
+enum AnchorJoinGameType{
+	AnchorJoinGameType_Match = 0;
+	AnchorJoinGameType_GameInvite = 1;
+	AnchorJoinGameType_Watch = 2;
+	AnchorJoinGameType_Watch_Join = 3;
+}
+
+message ResGameUserReconnect{
+	Error errCode = 1;
+
+	uint64 userId = 2;
+    string nickName = 3;
+    string head = 4;
+	string openId = 5;
+	GameRoomData room = 6;
+	AnchorJoinGameType joinGameType = 7;
+}
+
+message GameReconnectPlay{
+	// openid
+	string secOpenid = 1;
+	// 用户头像
+	string avatarUrl = 2;
+	// 阵营
+	PlayerGroup group = 3;
+	// 用户昵称(不加密)
+	string nickname = 5;
+	// 本局入场扣除的胜点
+	int64 delWinScore = 6;
+	// 本局入场时剩余的胜点
+	int64 usableWinScore = 7;
+}
+
+message ResGameUserReconnectData {
+	repeated GameReconnectPlay plays = 1;
+	repeated string noSyncMsgIds = 2;
+	// 剩余秒数
+	int64 remainingSec = 3;
+	// 游戏结束的时间戳
+	int64 gameOverUnix = 4;
+	// 房间里的用户
+    repeated GameUser users = 5;
+
+	RoomStatus status = 6;
+	// 房间号，游戏自己的不是抖音的
+    int64 roomId = 7;
+    // 房主的用户编号
+    uint64 masterId = 8;
+	// 是否为对决
+	bool duel = 9;
+	// 是否为快速匹配
+	bool quickMatch = 10;
+	// 难度编号 DifficultyLevelConfig.xlsx DifficultyLevel
+	int64 DifficultyLevel = 11;
+}
+
+message GamePlayerRank {
+	// openid
+	string secOpenid = 1;
+	// 用户头像
+	string avatarUrl = 2;
+	// 用户昵称(不加密)
+	string nickname = 3;
+	// 礼物数量
+	int64 sendGiftCount = 4;
+}
+
+// 礼物排行信息
+message GameGiftRankInfo 
+{
+	int64 giftID = 1;
+	repeated GamePlayerRank giftRanks = 2;
+}
+
+message ResGameGiftRank {
+	Error errCode = 1;
+
+	repeated GameGiftRankInfo giftTypeRanks = 2;
+}
+
+message GameAnchorRank {
+	uint64 userId = 1;
+    string nickName = 2;
+    string head = 3;
+	string openId = 4;
+	// 星数
+	int64 levelStar = 5;
+	// 排名
+	uint32 rankNum = 6;
+}
+
+message ResGameAnchorRank {
+	Error errCode = 1;
+	repeated GameAnchorRank anchorRank = 2;
+}
+
+message ResGameWeekRank {
+	Error errCode = 1;
+
+	// 周排行
+	repeated GameRankPlay weekRank = 2;
+}
+
+message ResGameWinScoreRank {
+	Error errCode = 1;
+
+	// 周排行
+	repeated GameRankPlay winScoreRank = 2;
+}
+
+message ResGameMonthRank {
+	Error errCode = 1;
+
+	// 月排行
+	repeated GameRankPlay monthRank = 2;
+}
+
+// 月排行第一名玩家落坐通知（客户端接收）
+message ResGameMonthRankFirstJoin {
+	Error errCode = 1;
+
+	string secOpenid = 2;   // 玩家 openid
+	string nickname = 3;     // 玩家昵称
+	string avatarUrl = 4;    // 玩家头像
+	int64 notifyType = 5;    // 通知类型 0:月排行 1:周排行
+}
+
+message ReqGameNextRound {
+	// 房间号，游戏自己的不是抖音的
+	int64 roomId = 1;
+}
+
+message ReqGameMsgOver{
+	// 消息的 msgId 包括 礼物，点赞，评论
+	string msgId = 1;
+	// 房间号，游戏自己的不是抖音的
+	int64 roomId = 2;
+}
+
+message GameOverRankPlay {
+	GamePlay play = 1;
+	// 瓜分的积分
+	int64 extraScore = 2;
+	// 本局总获得的积分
+	int64 randScore = 3;
+	// 总胜点
+	int64 winPoint = 4;
+	// 变更的胜点
+	int64 winChangePoint = 5;
+	// 周积分
+	int64 weekScore = 6;
+	// 月积分
+	int64 monthScore = 7;
+	// 胜点排名
+	uint32 winScoreRank = 8;
+	// 月排名
+	int64 monthRank = 9;
+	// 周排名
+	int64 weekRank = 10;
+}
+
+message GameRankPlay {
+	// openid
+	string secOpenid = 1;
+	// 用户头像
+	string avatarUrl = 2;
+	// 昵称
+	string nickname = 3;
+	// 排名
+	uint32 rankNum = 4;
+	// 积分
+	int64 score = 5;
+	// 胜点
+	int64 winScore = 6;
+}
+
+message ReqGameOver{
+	// 房间号，游戏自己的不是抖音的
+	int64 roomId = 1;
+	PlayerGroup winGroup = 2;
+	// 只有服务器使用 主播主动断开
+	bool anchorBreak = 3;
+}
+message ResGameOver {
+	Error errCode = 1;
+
+	PlayerGroup winGroup = 2;
+	// 本局排行
+	repeated GameOverRankPlay roundRank = 3;
+	// 周排行 已废弃
+	repeated GameRankPlay weekRank = 4;
+	// 月排行 已废弃
+	repeated GameRankPlay monthRank = 5;
+	// 离线玩家
+	repeated uint64 offlineUserIds = 6;
+}
+
+message ReqGameStart{
+	RoomInfo info = 1;
+}
+
+message ResGameStart{
+	Error errCode = 1;
+	// 房间号，游戏自己的不是抖音的
+    int64 roomId = 2;
+}
+
+message GameMicOption {
+	uint64 userId = 1;
+	// 麦克风值 0 静音 100 最大
+	int64 mikeValue = 2;
+}
+
+message GameUser{
+	BaseUser user = 1;
+	PlayerGroup group = 2;
+	// 用户第一次进入房间时信息 与BaseUser中的roomCode函意一样
+	string oldRoomCode = 3;
+	bool openMike = 4;
+	bool anonymous = 5;
+	// 1平台账号，2测试账号 3运营接管
+	int32 userType = 6;
+	// 今日投降次数
+	int32 surrenderCount = 7;
+	// 玩家是否匿名
+	bool playAnonymous = 8;
+	// 主播排名
+	int64 anchorRank = 9;
+	// 段位是否匿名
+	bool rankAnonymous = 10;
+	// 麦克风信息
+	repeated GameMicOption mikeOptions = 11;
+	AnchorJoinGameType joinGameType = 12;
+}
+
+enum GiftFromType {
+	GiftFromType_Unknow = 0;
+	// 1快手 2组刷 3随机礼物
+	GiftFromType_KuaiShou = 1;
+	GiftFromType_GiftTrigger = 2;
+	GiftFromType_Random = 3;
+	// 快手扭蛋
+	GiftFromType_KuaiShou_BulletGacha = 4;
+}
+
+message GameGift {
+	// id
+	string msgId = 1;
+	// 用户的加密openid，当前其实没有加密
+	string secOpenid = 2;
+	// 加密的礼物id
+	string secGiftId = 3;
+	// 送出的礼物数量
+	int64 giftNum = 4;
+	// 礼物总价值，单位分
+	int64 giftValue = 5;
+	// 用户头像
+	string avatarUrl = 6;
+	// 用户昵称(不加密)
+	string nickname = 7;
+	// 礼物毫秒级时间戳
+	int64 timestamp = 8;
+	// 被送礼的嘉宾openid，当前没有加密
+	string audienceSecOpenId= 9;
+	// 1 已发送客户端, 2客户端已经回执 3已跟抖音快手回执
+	int32 step = 10;
+	// 礼物来源类型 
+	GiftFromType fromType = 11;
+	// 随机来源类型时 来源礼物 id
+	string fromGiftId = 12;
+}
+
+message ResGameGift {
+	Error errCode = 1;
+
+	repeated GameGift gifts = 2;
+}
+
+message GameComment {
+	// id
+	string msgId = 1;
+	// 用户的加密openid，当前其实没有加密
+	string secOpenid = 2;
+	// 评论内容
+	string content = 3;
+	// 用户头像
+	string avatarUrl = 4;
+	// 用户昵称(不加密)
+	string nickname = 5;
+	// 礼物毫秒级时间戳
+	int64 timestamp = 6;
+	// 1 已发送客户端, 2客户端已经回执 3已跟抖音快手回执
+	int32 step = 7;
+}
+
+message ResGameComment {
+	Error errCode = 1;
+
+	repeated GameComment comments = 2;
+}
+
+message GameLike {
+	// id
+	string msgId = 1;
+	// 用户的加密openid，当前其实没有加密
+	string secOpenid = 2;
+	// 点赞数量
+	int64 like_num = 3;
+	// 用户头像
+	string avatarUrl = 4;
+	// 用户昵称(不加密)
+	string nickname = 5;
+	// 礼物毫秒级时间戳
+	int64 timestamp = 6;
+	// 1 已发送客户端, 2客户端已经回执 3已跟抖音快手回执
+	int32 step = 7;
+}
+
+message ResGameLike {
+	Error errCode = 1;
+
+	repeated GameLike likes = 2;
+}
+
+message GamePlay {
+	// openid
+	string secOpenid = 1;
+	// 用户头像
+	string avatarUrl = 2;
+	// 阵营
+	PlayerGroup group = 3;
+	// 用户昵称(不加密)
+	string nickname = 5;
+	// 本局贡献的积分点
+	int64 contributeScore = 6;
+	// 本局入场扣除的胜点
+	int64 delWinScore = 7;
+	// 本局入场时剩余的胜点
+	int64 usableWinScore = 8;
+	// 所属方播的 open id
+	string acOpenId = 9;
+	string exp = 10;
+	// 月排名
+	int32 monthRank = 11;
+	// 使用中的皮肤
+	repeated int64 equipSkinIds = 12;
+	// 周排名
+	int32 weekRank = 13;
+}
+
+message GamePlayJoin {
+	GamePlay play = 1;
+	// 周排名
+	int32 weekRank = 2;
+	// 胜点排名
+	int32 winScoreRank = 3;
+}
+
+message ResGamePlayGroup {
+	Error errCode = 1;
+
+	repeated GamePlayJoin joins = 2;
+}
+
+message GameRoomData{
+	RoomStatus status = 1;
+	// 房间号，游戏自己的不是抖音的
+    int64 roomId = 2;
+    // 房主的用户编号
+    uint64 masterId = 3;
+    // 房间里的用户
+    repeated GameUser users = 4;
+	// 是否为对决
+	bool duel = 5;
+	// 使用当时的时间戳
+	int64 roundId = 6;
+	// 积分池的积分
+	int64 pondScore = 7;
+	repeated GamePlay plays = 8;
+
+	repeated GameGift gifts = 9;
+	repeated GameComment comments = 10;
+	repeated GameLike likes = 11;
+	// 推力与血量数据 角力游戏中 groupsData 所有的血量加起来等于配置的血量
+	repeated GroupSyncData groupsData = 12;
+	// 难度编号 DifficultyLevelConfig.xlsx DifficultyLevel
+	int64 DifficultyLevel = 13;
+	// 剩余秒数
+	int64 remainingSec = 14;
+	// 是否为快速匹配
+	bool quickMatch = 15;
+	// 游戏结束的时间戳
+	int64 gameOverUnix = 16;
+}
+
+message ReqGameData{
+	// 房间号，游戏自己的不是抖音的
+	int64 roomId = 1;
+}
+
+// 快手扭蛋 ReqGameKsBulletGacha
+message ReqGameKsBulletGacha{
+  string messageId = 1;
+  string event = 2;
+  string appId = 3;
+  int64 timestamp = 4;
+  KuaiShouBulletGachaData data = 5;
+}
+  
+message KuaiShouBulletGachaData{
+  string outOrderNo = 1;
+  string fromUserOpenId = 2;
+  string toUserOpenId = 3;
+  string giftId = 4;
+  int64 giftCopies = 5;
+  repeated int64 enableList = 6;
+  int64 fromUserTierId = 7;
+  int64 fromUserSubLevelId = 8;
+  string roomId = 9;
+  string appId = 10;
+  int64 timestamp = 11;
+  string toUserHeadUrl = 12;
+  string toUserName = 13;
+  string fromUserHeadUrl = 14;
+  string fromUserName = 15;
+}
+
+message ResGameData{
+	Error errCode = 1;
+	GameRoomData room = 2;
+}
+
+message ReqGameUserOffline{
+	uint64 userId = 1;
+}
+
+message DyGift{
+	string msg_id = 1;
+	string sec_openid = 2;
+	string sec_gift_id = 3;
+	int64 gift_num = 4;
+	// 礼物总价值，单位分
+	int64 gift_value = 5;
+	string avatar_url = 6;
+	string nickname = 7;
+	int64 timestamp = 8;
+	bool test = 9;
+	string audience_sec_open_id = 10;
+	bool ignore_up = 11;
+}
+message ReqGameDyGift{
+	// 抖音的 roomId
+	string roomId = 1;
+	repeated DyGift gifts = 2;
+}
+message DyComment{
+	string msg_id = 1;
+	string sec_openid = 2;
+	string content = 3;
+	string avatar_url = 4;
+	string nickname = 5;
+	int64 timestamp = 6;
+	bool ignore_up = 7;
+}
+message ReqGameDyComment{
+	// 抖音的 roomId
+	string roomId = 1;
+	repeated DyComment comments = 2;
+}
+message DyLike{
+	string msg_id = 1;
+	string sec_openid = 2;
+	int64 like_num = 3;
+	string avatar_url = 4;
+	string nickname = 5;
+	int64 timestamp = 6;
+	bool ignore_up = 7;
+}
+message ReqGameDyLike{
+	// 抖音的 roomId
+	string roomId = 1;
+	repeated DyLike likes = 2;
+}
+message ReqGameDyFansclub{}
+message KuaiShouUser{
+	string userId = 1;
+	string userName = 2;
+	string headUrl = 3;
+}
+message KuaiShouPushQueryPayLoad{
+	string uniqueNo = 1;
+	string giftId = 2;
+	string giftName = 3;
+	int64 giftCount = 4;
+	int64 giftUnitPrice = 5;
+	int64 giftTotalPrice = 6;
+	bool normalGift = 7;
+	string content = 8;
+	int64 count = 9;
+	KuaiShouUser userInfo = 10;
+}
+message KuaiShouPushData{
+	string push_type = 1;
+	string unique_message_id = 2;
+	string author_open_id = 3;
+	int64 live_timestamp = 4;
+	string room_code = 5;
+	repeated KuaiShouPushQueryPayLoad payload = 6;
+}
+message ReqGameKsPushData{
+	string message_id = 1;
+	string event = 2;
+	string app_id = 3;
+	int64 timestamp = 4;
+	KuaiShouPushData data = 5;
+}
+
+message ResGameNotifyOutHeroUnit{
+	Error errCode = 1;
+	int64 id = 2;
+	PlayerGroup group = 3;
+}
+
+message ResGameDayTop {
+	// openid
+	string secOpenid = 1;
+	// 用户头像
+	string avatarUrl = 2;
+	// 用户昵称(不加密)
+	string nickname = 3;
+	int64 val = 5;
+
+	Error errCode = 99;
+}
+
+message ReqGameWallName{
+	// 1:日墙 2:周
+	int64 type=1;
+}
+message GameWallName{
+	string secOpenid=1;           // 用户的加密openid，当前其实没有加密
+	string avatarUrl=2;           // 用户头像
+	string nickname=3;             // 用户昵称(不加密)
+	int64  dayNum=4;
+	int64  weekNum=5;
+}
+
+message ResGameWallName{
+	Error errCode = 1;
+	repeated GameWallName wallName = 2;
+}
+
+message ResGameLingFlagReward{
+	Error errCode = 1;
+	string secOpenid=2;           // 用户的加密openid，当前其实没有加密
+	string avatarUrl=3;           // 用户头像
+	string nickname=4;             // 用户昵称(不加密)
+}
+
+// 快手玩法奖励 ReqGameKsRewardNotify
+message ReqGameKsRewardNotify {
+	string messageId = 1;
+	string event = 2;
+	string appId = 3;
+	int64 timestamp = 4;
+	KuaiShouRewardNotifyData data = 5;
+}
+
+message KuaiShouRewardNotifyData {
+	string rewardUniqueNo = 1;
+	string uniqueMessageId = 2;
+	repeated string rewardIds = 3;
+	string userId = 4;
+	string userName = 5;
+	string userIconUrl = 6;
+	string roomCode = 7;
+	string bizType = 8;
+	int64 timestamp = 9;
+}
+
+message ReqGameWatchJoin{
+	// 房间号
+	int64 roomId = 1;
+	// 观战主播
+	uint64 userId = 2;
+}
+message ResGameWatchJoin{
+	Error errCode = 1;
+	// 观战主播
+	uint64 userId = 2;
+	string openId = 3;
+	string nickname = 4;
+	string head = 5;
+}
+message ReqGameWatchLeave{
+	// 房间号
+	int64 roomId = 1;
+	// 离开主播
+	uint64 userId = 2;
+	string openId = 3;
+	string nickname = 4;
+	string head = 5;
+}
+message ResGameWatchLeave{
+	Error errCode = 1;
+	// 离开主播
+	uint64 userId = 2;
+	string openId = 3;
+	string nickname = 4;
+	string head = 5;
+}
+message ReqGameWatchJoinGame{
+	// 房间号
+	int64 roomId = 1;
+	// 下场主播
+	uint64 userId = 2;
+	PlayerGroup group = 3;
+}
+message ResGameWatchJoinGame{
+	Error errCode = 1;
+	// 下场主播
+	uint64 userId = 2;
+	string openId = 3;
+	string nickname = 4;
+	string head = 5;
+	PlayerGroup group = 6;
+}
+
+message ReqGameInviteAnchor{
+	// 房间号
+	int64 roomId = 1;
+	// 邀请主播
+	uint64 userId = 2;
+	string openId = 3;
+	string nickname = 4;
+	string head = 5;
+	PlayerGroup group = 6;
+	// 目标主播用户编号，即被邀请的主播
+	uint64 targetUserId = 7;
+}
+message ResGameInviteAnchor{
+	Error errCode = 1;
+	// 房间号
+	int64 roomId = 2;
+	// 邀请主播
+	uint64 userId = 3;
+	string openId = 4;
+	string nickname = 5;
+	string head = 6;
+	PlayerGroup group = 7;
+	// 目标主播用户编号，即被邀请的主播
+	uint64 targetUserId = 8;
+}
+
+message ReqGameInviteAnchorResult{
+	// 房间号
+	int64 roomId = 1;
+	// 邀请主播
+	uint64 userId = 2;
+	PlayerGroup group = 3;
+	// 目标主播用户编号，即被邀请的主播
+	uint64 targetUserId = 4;
+	// 邀请结果
+	bool result = 5;
+}
+message ResGameInviteAnchorResult{
+	Error errCode = 1;
+	// 房间号
+	int64 roomId = 2;
+	// 邀请主播
+	uint64 userId = 3;
+	PlayerGroup group = 4;
+	// 目标主播用户编号，即被邀请的主播
+	uint64 targetUserId = 5;
+	// 邀请结果
+	bool result = 6;
+}
+
+message ResGameNotifyAnchorJoinGame {
+	Error errCode = 1;
+	// 房间号
+	int64 roomId = 2;
+	// 主播用户编号
+	uint64 userId = 3;
+	// 主播用户昵称
+	string nickname = 4;
+	// 主播用户头像
+	string head = 5;
+	// 主播用户组
+	PlayerGroup group = 6;
+	// 主播加入游戏类型
+	AnchorJoinGameType joinType = 7;
+	// openid
+	string openId = 8;
+}
