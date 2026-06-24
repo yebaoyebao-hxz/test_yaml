@@ -37,11 +37,19 @@ from web_server.routes_db import db_bp
 from web_server.routes_danmaku import danmaku_bp
 from web_server.routes_static import static_bp
 from web_server.routes_wsperf import wsperf_bp
+from web_server.routes_protobuf import proto_bp
 
 
 def create_app():
     """工厂函数：创建并配置 Flask 应用"""
-    app = Flask(__name__, template_folder=os.path.join(_project_root, "html"))
+    # 项目根目录下的 html 文件夹路径（存放前端静态资源）
+    html_dir = os.path.join(_project_root, "html")
+    app = Flask(
+        __name__,
+        template_folder=html_dir,       # 模板目录（原有配置）
+        static_folder=html_dir,        # 静态文件目录指向 html 文件夹
+        static_url_path=""             # 静态文件URL路径为空，使 /css/main.css 直接映射到 html/css/main.css
+    )
     app.register_blueprint(gen_bp)
     app.register_blueprint(exec_bp)
     app.register_blueprint(ai_assert_bp)
@@ -49,6 +57,7 @@ def create_app():
     app.register_blueprint(danmaku_bp)
     app.register_blueprint(static_bp)
     app.register_blueprint(wsperf_bp)
+    app.register_blueprint(proto_bp)
     return app
 
 

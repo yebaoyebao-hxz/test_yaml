@@ -118,6 +118,10 @@ def regular(target):
         regular_pattern = r'\${{(.*?)}}'
         while re.findall(regular_pattern, target):
             key = re.search(regular_pattern, target).group(1)
+            # 防御：不包含 "(" 说明不是函数调用，去掉 ${{ }} 包装保留原文
+            if '(' not in key or ')' not in key:
+                target = re.sub(regular_pattern, key, target, 1)
+                continue
             value_types = ['int:', 'bool:', 'list:', 'dict:', 'tuple:', 'float:']
             if any(i in key for i in value_types) is True:
                 func_name = key.split(":")[1].split("(")[0]

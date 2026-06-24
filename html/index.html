@@ -1,244 +1,569 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>YAML 测试用例生成器</title>
-  <link rel="stylesheet" href="css/main.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>花仙子科技AI测试平台</title>
+<link rel="stylesheet" href="/css/main.css">
 </head>
 <body>
-  <!-- 引入顶部导航 -->
-  <script src="https://code.jquery.com/jquery-3.6.4.min.js"></script>
-  <div id="header-container"></div>
-  <!-- 引入顶层页签 -->
-  <div id="tabs-container"></div>
-  <!-- 引入所有视图 -->
-  <div id="views-container"></div>
 
-  <script>
-    // 加载组件和视图
-    $(function() {
-      // 加载顶部导航
-      $('#header-container').load('components/header.html');
-      // 加载页签
-      $('#tabs-container').load('components/page-tabs.html', function() {
-        // 页签切换逻辑
-        $('.page-tab').click(function() {
-          $('.page-tab').removeClass('active');
-          $(this).addClass('active');
-          const viewId = $(this).data('view') + '-view';
-          $('.view-section').addClass('hidden');
-          $('#' + viewId).removeClass('hidden');
-        });
-      });
-      // 加载所有视图
-      $('#views-container').load('views/records-view.html', function() {
-        $('#views-container').append($('<div>').load('views/perf-view.html'));
-        $('#views-container').append($('<div>').load('views/danmaku-view.html'));
-        $('#views-container').append($('<div>').load('views/proto-view.html'));
-        $('#views-container').append($('<div>').load('views/binary-view.html'));
-        $('#views-container').append($('<div>').load('views/ai-panel.html'));
-      });
+<div class="header">
+  <span class="logo">🐇</span>
+  <h1>花仙子科技AI测试平台</h1>
+  <span class="sub">AI 驱动 · DeepSeek / 通义千问</span>
+</div>
 
-      // 性能测试滑块逻辑
-      $(document).on('input', '#concurrency-slider', function() {
-        $('#concurrency-val').text($(this).val());
-      });
-      $(document).on('input', '#duration-slider', function() {
-        $('#duration-val').text($(this).val());
-      });
+<div class="page-tabs">
+  <button class="page-tab active" data-page="generate" onclick="switchPage('generate')">⚡ 接口用例生成</button>
+  <button class="page-tab" data-page="records" onclick="switchPage('records')">📜 运行记录</button>
+  <button class="page-tab" data-page="perf" onclick="switchPage('perf')">🚀 性能测试</button>
+  <button class="page-tab" data-page="danmaku" onclick="switchPage('danmaku')">🎯 弹幕压测</button>
+  <button class="page-tab" data-page="danmaku-ws" onclick="switchPage('danmaku-ws')">🔗 弹幕长链接压测</button>
+  <button class="page-tab" data-page="protobuf" onclick="switchPage('protobuf')">📦 Protobuf 调试</button>
+</div>
 
-      // 性能测试模式切换
-      $(document).on('click', '.mode-btn', function() {
-        $('.mode-btn').removeClass('active');
-        $(this).addClass('active');
-        const mode = $(this).data('mode');
-        if (mode === 'ws') {
-          $('.http-only').hide();
-          $('.ws-only').addClass('show');
-        } else {
-          $('.ws-only').removeClass('show');
-          $('.http-only').show();
-        }
-      });
+<div id="view-generate" class="view-section">
+<div class="db-bar">
+  <span>🗄️ 数据库:</span>
+  <input id="db-path" placeholder="E:\\yebao\\test_yaml\\history.db" title="SQLite 数据库路径，留空使用默认">
+  <button class="btn btn-outline" onclick="setDbPath()">💾 保存</button>
+  <span class="db-count" id="db-count"></span>
+  <span style="flex:1"></span>
+</div>
 
-      // 添加请求头
-      $(document).on('click', '#add-header', function() {
-        const headerItem = `
+<div class="container">
+  <!-- 左半：输入区 -->
+  <div class="card input-card">
+    <div class="card-header">📥 输入</div>
+    <div class="card-body">
+      <div class="tabs">
+        <button class="tab-btn active" data-tab="curl">curl 命令</button>
+        <button class="tab-btn" data-tab="text">文本描述</button>
+        <button class="tab-btn" data-tab="image">📸 截图识别</button>
+      </div>
+
+      <!-- curl 输入 -->
+      <div id="curl-group" class="input-group">
+        <textarea id="curl-input" placeholder="粘贴 curl 命令，如：&#10;curl 'https://api.example.com/login' \&#10;  -H 'Content-Type: application/json' \&#10;  --data-raw '{&quot;phone&quot;:&quot;138****0001&quot;,&quot;code&quot;:&quot;1111&quot;}'"></textarea>
+      </div>
+
+      <!-- 文本输入 -->
+      <div id="text-group" class="input-group hidden">
+        <textarea id="text-input" placeholder="描述接口信息，如：&#10;POST /api/user/login&#10;参数: mobile(string,必填), code(string,必填), invite_code(string,选填)&#10;响应: {code, msg, data: {token, userId}}&#10;需要覆盖场景：正常登录、错误验证码、参数缺失、token提取"></textarea>
+      </div>
+
+      <!-- 图片输入 -->
+      <div id="image-group" class="input-group hidden">
+        <div class="upload-zone" id="upload-zone">
+          <span class="icon">🖼️</span>
+          <span class="hint">点击上传或拖拽截图到此处<br><small>支持 .png .jpg .webp</small></span>
+          <img id="preview-img" alt="preview">
+        </div>
+        <input type="file" id="file-input" accept="image/*" style="display:none">
+      </div>
+
+      <!-- 通用截图附件（所有输入模式共用） -->
+      <div style="padding:0;margin-top:4px;">
+        <div style="font-size:12px;color:#888;margin-bottom:4px;">📎 附加截图（粘贴 / 拖拽 / 点击 +号）</div>
+        <div class="attach-strip" id="attach-strip">
+          <div class="attach-add" id="attach-add-btn" title="添加截图">+</div>
+          <span class="attach-hint" id="attach-hint">Ctrl+V 粘贴，或拖拽图片到此处</span>
+        </div>
+        <input type="file" id="attach-file-input" accept="image/*" multiple style="display:none">
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-outline" onclick="clearAll()">清空</button>
+        <button class="btn btn-primary" id="submit-btn" onclick="doGenerate()">
+          <span class="spinner" id="spinner"></span>
+          <span id="submit-text">⚡ 生成 YAML</span>
+        </button>
+        <label class="normalize-toggle" title="开启后：HTTP 200 + 仅判断 code 返回值">
+          <input type="checkbox" id="normalize-switch" onchange="toggleNormalize()">
+          <span class="toggle-track"></span>
+          <span class="toggle-label">标准化</span>
+        </label>
+      </div>
+    </div>
+  </div>
+
+  <!-- 右上半：摘要 -->
+  <div class="card" style="max-height:120px;">
+    <div class="card-header">
+      📋 生成摘要
+      <span class="model-tag" id="model-tag"></span>
+      <button class="btn btn-outline" style="margin-left:auto;padding:3px 10px;font-size:11px;" onclick="toggleHistory()">📜 历史 (<span id="history-count">0</span>)</button>
+    </div>
+    <div class="card-body" style="padding:6px 16px 4px;">
+      <div id="summary-box" style="color:#888; font-size:13px; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">等待生成...</div>
+    </div>
+  </div>
+
+  <!-- 右下：YAML 输出 -->
+  <div class="card yaml-card">
+    <div class="card-header output-header">
+      📄 YAML 输出
+      <span id="status-badge"></span>
+      <button class="btn btn-outline" style="margin-left:auto;padding:4px 12px;font-size:12px;" onclick="toggleRaw()">查看原文</button>
+    </div>
+    <div class="yaml-scroll">
+      <textarea class="yaml-output" id="yaml-output" placeholder="等待生成..." readonly spellcheck="false"></textarea>
+    </div>
+    <div class="output-actions">
+      <button class="btn btn-execute" id="execute-btn" onclick="doExecute()">
+        <span class="spinner" id="exec-spinner"></span>
+        🚀 执行用例
+      </button>
+      <button class="btn btn-ai-assert" id="ai-assert-btn" onclick="doAiAssert()">
+        <span class="spinner" id="ai-spinner"></span>
+        🤖 AI断言
+      </button>
+      <span style="flex:1"></span>
+      <button class="btn btn-outline" onclick="copyYaml()">📋 复制 YAML</button>
+      <button class="btn btn-primary" onclick="downloadYaml()" style="flex:none">💾 下载 .yaml</button>
+      <button class="btn btn-outline" onclick="downloadRawYaml()">📄 下载原文</button>
+    </div>
+  </div>
+</div>
+</div><!-- /view-generate -->
+
+<div id="view-records" class="view-section hidden">
+<div class="records-wrap">
+  <div class="records-toolbar">
+    <span style="font-weight:600;">🗄️ 运行记录</span>
+    <input id="records-search" placeholder="搜索文件名或摘要..." oninput="filterRecords()">
+    <span class="count" id="records-count"></span>
+    <button class="btn btn-outline" style="padding:4px 10px;font-size:12px;" onclick="loadRecords()">🔄 刷新</button>
+  </div>
+  <div id="records-table-wrap">
+    <div class="records-empty" id="records-empty">加载中...</div>
+    <table class="records-table" id="records-table" style="display:none;">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>文件名</th>
+          <th>输入类型</th>
+          <th>摘要</th>
+          <th>执行状态</th>
+          <th>时间</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody id="records-tbody"></tbody>
+    </table>
+  </div>
+</div>
+</div>
+
+<div id="view-perf" class="view-section hidden">
+<div class="perf-wrap">
+  <!-- 配置区 -->
+  <div class="card perf-config-card">
+    <div class="card-header">⚙️ 压测配置</div>
+    <div class="card-body">
+      <div class="perf-row">
+        <label>URL</label>
+        <input id="perf-url" placeholder="https://api.example.com/endpoint">
+      </div>
+      <!-- 模式切换 -->
+      <div class="mode-switch">
+        <button class="mode-btn active" data-mode="http" onclick="switchPerfMode('http')">🌐 HTTP</button>
+        <button class="mode-btn" data-mode="ws" onclick="switchPerfMode('ws')">🔌 长链接 WebSocket</button>
+      </div>
+      <div class="http-only">
+        <div class="perf-row">
+          <label>方法</label>
+          <select id="perf-method">
+            <option>GET</option><option>POST</option><option>PUT</option><option>DELETE</option><option>PATCH</option>
+          </select>
+        </div>
+      </div>
+      <div class="http-only">
+        <div style="font-size:12px;color:#888;margin-top:2px;">Headers</div>
+        <div class="perf-header-list" id="perf-headers">
           <div class="perf-header-item">
-            <input type="text" placeholder="Key">
-            <input type="text" placeholder="Value">
-            <button class="btn-remove">×</button>
+            <input placeholder="Key" value="Content-Type">
+            <input placeholder="Value" value="application/json">
+            <button class="btn-remove" onclick="removePerfHeader(this)">×</button>
           </div>
-        `;
-        $('.perf-header-list').append(headerItem);
-      });
+        </div>
+        <button class="btn btn-outline" style="padding:4px 10px;font-size:12px;align-self:flex-start;" onclick="addPerfHeader()">+ 添加 Header</button>
+      </div>
+      <div>
+        <div style="font-size:12px;color:#888;" id="perf-body-label">Body（POST/PUT/PATCH 时使用）</div>
+        <textarea class="perf-body-input" id="perf-body" placeholder='{"key": "value"}'></textarea>
+      </div>
+      <!-- WebSocket 专属配置 -->
+      <div class="ws-only" id="ws-extra">
+        <div class="perf-row">
+          <label>连接超时</label>
+          <input id="ws-timeout" type="number" value="10" min="1" max="60" style="width:100%;padding:6px 10px;border:1px solid #d9d9d9;border-radius:6px;font-size:13px;">
+          <span style="font-size:12px;color:#888;white-space:nowrap;">秒</span>
+        </div>
+        <div class="perf-row">
+          <label>心跳间隔</label>
+          <input id="ws-ping-interval" type="number" value="0" min="0" max="60" style="width:100%;padding:6px 10px;border:1px solid #d9d9d9;border-radius:6px;font-size:13px;">
+          <span style="font-size:12px;color:#888;white-space:nowrap;">秒 (0=不发送)</span>
+        </div>
+      </div>
+      <div class="perf-slider-row">
+        <label id="perf-concurrency-label">并发数</label>
+        <div class="slider-wrap">
+          <input type="range" id="perf-concurrency" min="1" max="50" value="5" oninput="document.getElementById('perf-concurrency-val').textContent=this.value">
+          <span class="val" id="perf-concurrency-val">5</span>
+        </div>
+      </div>
+      <div class="perf-slider-row">
+        <label id="perf-total-label">总请求</label>
+        <div class="slider-wrap">
+          <input type="range" id="perf-total" min="10" max="500" value="50" step="10" oninput="document.getElementById('perf-total-val').textContent=this.value">
+          <span class="val" id="perf-total-val">50</span>
+        </div>
+      </div>
+      <div class="perf-btn-row">
+        <button class="btn-perf-run" id="perf-run-btn" onclick="doPerfTest()">
+          <span class="spinner" id="perf-spinner"></span>
+          <span id="perf-run-label">🚀 开始压测</span>
+        </button>
+        <button class="btn-perf-stop" id="perf-stop-btn" onclick="stopPerfTest()">⏹ 停止</button>
+      </div>
+      <div class="perf-progress" id="perf-progress" style="display:none;">
+        <div class="perf-progress-bar" id="perf-progress-bar"></div>
+      </div>
+    </div>
+  </div>
 
-      // 删除请求头
-      $(document).on('click', '.perf-header-item .btn-remove', function() {
-        $(this).parent().remove();
-      });
+  <!-- 结果区 -->
+  <div class="card">
+    <div class="card-header">📊 实时指标 <span id="perf-status" style="font-size:12px;color:#888;margin-left:8px;"></span></div>
+    <div class="card-body">
+      <div class="perf-metrics" id="perf-metrics">
+        <div class="perf-metric-card"><div class="label" id="perf-metric-l1">总请求</div><div class="value" id="perf-total-req">-</div></div>
+        <div class="perf-metric-card ok"><div class="label" id="perf-metric-l2">成功</div><div class="value" id="perf-ok">-</div></div>
+        <div class="perf-metric-card err"><div class="label" id="perf-metric-l3">失败</div><div class="value" id="perf-err">-</div></div>
+        <div class="perf-metric-card"><div class="label" id="perf-metric-l4">TPS</div><div class="value" id="perf-tps">-<span class="unit" id="perf-tps-unit"> req/s</span></div></div>
+      </div>
+      <!-- WebSocket 连接指标（默认隐藏） -->
+      <div class="perf-metrics" id="ws-conn-metrics" style="display:none;margin-top:10px;">
+        <div class="perf-metric-card"><div class="label">连接总数</div><div class="value" id="ws-conn-total">-</div></div>
+        <div class="perf-metric-card ok"><div class="label">连接成功</div><div class="value" id="ws-conn-ok">-</div></div>
+        <div class="perf-metric-card err"><div class="label">连接失败</div><div class="value" id="ws-conn-err">-</div></div>
+        <div class="perf-metric-card warn"><div class="label">平均连接耗时</div><div class="value" id="ws-conn-avg">-<span class="unit"> ms</span></div></div>
+      </div>
+    </div>
+  </div>
 
-      // Proto文件上传逻辑
-      $(document).on('click', '#proto-upload-area', function() {
-        $('#proto-file-input').click();
-      });
-      $(document).on('change', '#proto-file-input', function(e) {
-        const files = e.target.files;
-        if (files.length > 0) {
-          const fileList = $('#proto-file-list');
-          fileList.empty();
-          for (let i = 0; i < files.length; i++) {
-            const file = files[i];
-            const fileSize = (file.size / 1024).toFixed(1) + ' KB';
-            const fileItem = `
-              <div class="proto-file-item">
-                <div class="name">${file.name}</div>
-                <div class="size">${fileSize}</div>
-                <div class="btn-remove">×</div>
-              </div>
-            `;
-            fileList.append(fileItem);
-          }
-        }
-      });
-      // 删除Proto文件
-      $(document).on('click', '.proto-file-item .btn-remove', function() {
-        $(this).parent().remove();
-      });
-      // 解析Proto文件
-      $(document).on('click', '.proto-parse-btn', function() {
-        $('#proto-parse-result').show();
-        // 模拟解析结果
-        $('#proto-parse-result pre').text(`
-syntax = "proto3";
-package example;
+  <div class="card">
+    <div class="card-header">⏱ 延迟分布 <span id="perf-latency-title-suffix" style="font-size:12px;color:#888;"></span></div>
+    <div class="card-body">
+      <table class="perf-latency-table">
+        <tr><td>平均</td><td id="perf-avg">- ms</td></tr>
+        <tr><td>P50</td><td id="perf-p50">- ms</td></tr>
+        <tr><td>P90</td><td id="perf-p90">- ms</td></tr>
+        <tr><td>P95</td><td id="perf-p95">- ms</td></tr>
+        <tr><td>P99</td><td id="perf-p99">- ms</td></tr>
+        <tr><td>最小</td><td id="perf-min">- ms</td></tr>
+        <tr><td>最大</td><td id="perf-max">- ms</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+</div>
 
-message Danmaku {
-  string content = 1; // 弹幕内容
-  int64 uid = 2;      // 用户ID
-  int32 timestamp = 3;// 发送时间戳
-}
+<div id="view-danmaku" class="view-section hidden">
+<div class="danmaku-wrap">
+  <!-- 左栏：项目列表 -->
+  <div class="danmaku-left">
+    <div class="card" style="height:100%;">
+      <div class="card-header" style="display:flex;align-items:center;gap:8px;">
+        🎯 弹幕项目
+        <span style="font-size:11px;color:#888;margin-left:auto;" id="dm-count"></span>
+      </div>
+      <div class="dm-cat-tabs" id="dm-cat-tabs">
+        <button class="dm-cat-btn active" onclick="filterDmCategory('')">全部</button>
+      </div>
+      <div class="dm-project-list" id="dm-project-list">
+        <div class="dm-empty">加载中...</div>
+      </div>
+      <div style="padding:10px;">
+        <button class="btn btn-primary" style="width:100%;" onclick="showDmForm()">+ 新增项目</button>
+      </div>
+    </div>
+  </div>
 
-service DanmakuService {
-  rpc SendDanmaku (Danmaku) returns (Response);
-}
-
-message Response {
-  int32 code = 1;
-  string msg = 2;
-}
-        `);
-      });
-
-      // 二进制数据可视化逻辑
-      $(document).on('click', '#binary-parse-btn', function() {
-        // 模拟解析逻辑（实际需实现Base64/16进制转二进制）
-        const input = $('#binary-input').val();
-        // 这里仅做示例渲染
-        const visualArea = $('#binary-visual-area');
-        visualArea.empty();
-        const row = `
-          <div class="binary-hex-row">
-            <span class="binary-offset-col">0000</span>
-            <span class="binary-hex-col">48</span>
-            <span class="binary-hex-col">65</span>
-            <span class="binary-hex-col">6C</span>
-            <span class="binary-hex-col">6C</span>
-            <span class="binary-hex-col">6F</span>
-            <span class="binary-hex-col">20</span>
-            <span class="binary-hex-col">57</span>
-            <span class="binary-hex-col">6F</span>
-            <span class="binary-hex-col">72</span>
-            <span class="binary-hex-col">6C</span>
-            <span class="binary-hex-col">64</span>
-            <span class="binary-hex-col">21</span>
-            <span class="binary-ascii-col">H</span>
-            <span class="binary-ascii-col">e</span>
-            <span class="binary-ascii-col">l</span>
-            <span class="binary-ascii-col">l</span>
-            <span class="binary-ascii-col">o</span>
-            <span class="binary-ascii-col"> </span>
-            <span class="binary-ascii-col">W</span>
-            <span class="binary-ascii-col">o</span>
-            <span class="binary-ascii-col">r</span>
-            <span class="binary-ascii-col">l</span>
-            <span class="binary-ascii-col">d</span>
-            <span class="binary-ascii-col">!</span>
+  <!-- 右栏：表单 / 结果 -->
+  <div class="danmaku-right" id="dm-right">
+    <div class="card" id="dm-form-card">
+      <div class="card-header" id="dm-form-title">📝 新增弹幕项目</div>
+      <div class="card-body dm-form-body">
+        <div class="perf-row"><label>分类</label>
+          <div style="display:flex;gap:6px;flex:1;">
+            <select id="dm-category" style="flex:1;"><option>默认</option></select>
+            <input id="dm-new-cat" placeholder="新分类..." style="width:100px;">
           </div>
-        `;
-        visualArea.append(row);
-      });
-
-      // AI交互面板逻辑
-      $(document).on('click', '#ai-send-btn', function() {
-        const inputVal = $('#ai-input').val().trim();
-        if (!inputVal) return;
-        // 添加用户消息
-        const userMsg = `
-          <div class="ai-message user">
-            <div class="ai-avatar">👤</div>
-            <div class="ai-content">${inputVal}</div>
+        </div>
+        <div class="perf-row"><label>项目名</label><input id="dm-project-name" placeholder="如：直播间弹幕发送"></div>
+        <div class="perf-row"><label>接口名</label><input id="dm-endpoint-name" placeholder="如：发送弹幕接口"></div>
+        <div class="perf-row"><label>URL</label><input id="dm-url" placeholder="https://api.example.com/dm/send"></div>
+        <div class="perf-row"><label>方法</label>
+          <select id="dm-method"><option>GET</option><option>POST</option><option>PUT</option><option>DELETE</option><option>PATCH</option></select>
+        </div>
+        <div style="font-size:12px;color:#888;">Headers</div>
+        <div class="perf-header-list" id="dm-headers">
+          <div class="perf-header-item">
+            <input placeholder="Key" value="Content-Type">
+            <input placeholder="Value" value="application/json">
+            <button class="btn-remove" onclick="removePerfHeader(this)">×</button>
           </div>
-        `;
-        $('#ai-chat-area').append(userMsg);
-        $('#ai-input').val('');
-        // 模拟AI回复
-        setTimeout(() => {
-          const aiMsg = `
-            <div class="ai-message assistant">
-              <div class="ai-avatar">🤖</div>
-              <div class="ai-content">以下是你请求的YAML测试用例示例：
-${'```yaml'}
-test_case:
-  name: HTTP POST接口测试
-  method: POST
-  url: https://api.example.com/test
-  headers:
-    Content-Type: application/json
-  body:
-    key1: value1
-    key2: value2
-  expected_code: 200
-  expected_response:
-    code: 0
-    msg: success
-${'```'}
-              </div>
-            </div>
-          `;
-          $('#ai-chat-area').append(aiMsg);
-          // 滚动到底部
-          $('#ai-chat-area').scrollTop($('#ai-chat-area')[0].scrollHeight);
-        }, 800);
-      });
+        </div>
+        <button class="btn btn-outline" style="padding:4px 10px;font-size:12px;align-self:flex-start;" onclick="addDmHeader()">+ 添加 Header</button>
+        <textarea class="perf-body-input" id="dm-body" placeholder='{"key": "value"}'></textarea>
+        <input type="hidden" id="dm-edit-id" value="">
+        <div class="perf-btn-row">
+          <button class="btn btn-primary" id="dm-save-btn" onclick="saveDmProject()">💾 保存</button>
+          <button class="btn btn-outline" id="dm-cancel-btn" style="display:none;" onclick="cancelDmEdit()">取消</button>
+        </div>
+      </div>
+    </div>
 
-      // 压测按钮切换（开始/停止）
-      $(document).on('click', '.btn-perf-run', function() {
-        $(this).prop('disabled', true);
-        $(this).siblings('.btn-perf-stop').show();
-        // 模拟进度条
-        let progress = 0;
-        const progressBar = $(this).closest('.perf-btn-row').siblings('.perf-progress').find('.perf-progress-bar');
-        const interval = setInterval(() => {
-          progress += 10;
-          progressBar.css('width', progress + '%');
-          if (progress >= 100) {
-            clearInterval(interval);
-            $(this).prop('disabled', false);
-            $(this).siblings('.btn-perf-stop').hide();
-            progressBar.css('width', '0%');
-          }
-        }, 500);
-      });
-      $(document).on('click', '.btn-perf-stop', function() {
-        $(this).hide();
-        $(this).siblings('.btn-perf-run').prop('disabled', false);
-        const progressBar = $(this).closest('.perf-btn-row').siblings('.perf-progress').find('.perf-progress-bar');
-        progressBar.css('width', '0%');
-        clearInterval(window.progressInterval);
-      });
-    });
-  </script>
+    <div class="card" id="dm-perf-card" style="display:none;">
+      <div class="card-header">📊 压测结果 — <span id="dm-perf-name"></span></div>
+      <div class="card-body">
+        <div class="perf-slider-row"><label>并发数</label><div class="slider-wrap"><input type="range" id="dm-perf-concurrency" min="1" max="30" value="5" oninput="document.getElementById('dm-perf-concurrency-val').textContent=this.value"><span class="val" id="dm-perf-concurrency-val">5</span></div></div>
+        <div class="perf-slider-row"><label>总请求</label><div class="slider-wrap"><input type="range" id="dm-perf-total" min="10" max="300" value="50" step="10" oninput="document.getElementById('dm-perf-total-val').textContent=this.value"><span class="val" id="dm-perf-total-val">50</span></div></div>
+        <div class="perf-btn-row">
+          <button class="btn-perf-run" id="dm-perf-run-btn" onclick="runDmPerf()">🚀 开始压测</button>
+          <button class="btn btn-outline" onclick="document.getElementById('dm-perf-card').style.display='none';">关闭</button>
+        </div>
+        <div class="perf-progress" id="dm-perf-progress" style="display:none;"><div class="perf-progress-bar" id="dm-perf-progress-bar"></div></div>
+        <div class="perf-metrics" style="margin-top:10px;" id="dm-perf-metrics">
+          <div class="perf-metric-card"><div class="label">总请求</div><div class="value" id="dm-total">-</div></div>
+          <div class="perf-metric-card ok"><div class="label">成功</div><div class="value" id="dm-ok">-</div></div>
+          <div class="perf-metric-card err"><div class="label">失败</div><div class="value" id="dm-err">-</div></div>
+          <div class="perf-metric-card"><div class="label">TPS</div><div class="value" id="dm-tps">-<span class="unit"> req/s</span></div></div>
+        </div>
+        <table class="perf-latency-table">
+          <tr><td>平均</td><td id="dm-avg">- ms</td></tr>
+          <tr><td>P50</td><td id="dm-p50">- ms</td></tr>
+          <tr><td>P90</td><td id="dm-p90">- ms</td></tr>
+          <tr><td>P95</td><td id="dm-p95">- ms</td></tr>
+          <tr><td>P99</td><td id="dm-p99">- ms</td></tr>
+          <tr><td>最小</td><td id="dm-min">- ms</td></tr>
+          <tr><td>最大</td><td id="dm-max">- ms</td></tr>
+        </table>
+        <!-- 运行日志面板 -->
+        <div style="margin-top:10px;" id="dm-error-log-box" hidden>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+            <strong style="color:#e74c3c;font-size:12px;">🐛 运行日志</strong>
+            <button onclick="document.getElementById('dm-error-log').innerHTML='';document.getElementById('dm-error-log-box').hidden=true;" style="background:none;border:none;color:#666;cursor:pointer;font-size:11px;">清空</button>
+          </div>
+          <div id="dm-error-log" style="max-height:260px;overflow:auto;background:#1e1e1e;color:#ccc;border-radius:4px;padding:8px;font:12px/1.6 Consolas,monospace;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<!-- 全局运行控制台 -->
+<div id="dm-global-console" style="margin-top:8px;display:none;">
+  <div style="display:flex;justify-content:space-between;align-items:center;background:#2c2c2c;padding:6px 12px;border-radius:6px 6px 0 0;border:1px solid #444;border-bottom:none;">
+    <span style="color:#aaa;font-size:12px;font-weight:600;">🐛 运行控制台</span>
+    <div style="display:flex;gap:6px;">
+      <button onclick="dmToggleConsole()" style="background:none;border:none;color:#888;cursor:pointer;font-size:16px;line-height:1;" title="最小化">▬</button>
+      <button onclick="document.getElementById('dm-console-log').innerHTML='';" style="background:none;border:none;color:#888;cursor:pointer;font-size:11px;">清空</button>
+    </div>
+  </div>
+  <div id="dm-console-log" style="background:#1e1e1e;border:1px solid #444;border-top:none;border-radius:0 0 6px 6px;padding:8px 12px;max-height:300px;overflow:auto;font:12px/1.7 'Consolas','Courier New',monospace;"></div>
+</div>
+</div>
+
+<div id="view-danmaku-ws" class="view-section hidden">
+<div class="danmaku-wrap">
+  <!-- 左栏：项目列表 -->
+  <div class="danmaku-left">
+    <div class="card" style="height:100%;">
+      <div class="card-header" style="display:flex;align-items:center;gap:8px;">
+        🔗 WS压测项目
+        <span style="font-size:11px;color:#888;margin-left:auto;" id="dmws-count"></span>
+      </div>
+      <div class="dm-cat-tabs" id="dmws-cat-tabs">
+        <button class="dm-cat-btn active" onclick="filterDmWsCategory('')">全部</button>
+      </div>
+      <div class="dm-project-list" id="dmws-project-list">
+        <div class="dm-empty">加载中...</div>
+      </div>
+      <div style="padding:10px;">
+        <button class="btn btn-primary" style="width:100%;" onclick="showDmWsForm()">+ 新增项目</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 右栏：表单 / 压测 -->
+  <div class="danmaku-right" id="dmws-right">
+    <div class="card" id="dmws-form-card">
+      <div class="card-header" id="dmws-form-title">📝 新增WS压测项目</div>
+      <div class="card-body dm-form-body">
+        <div class="perf-row"><label>分类</label>
+          <div style="display:flex;gap:6px;flex:1;">
+            <select id="dmws-category" style="flex:1;"><option>默认</option></select>
+            <input id="dmws-new-cat" placeholder="新分类..." style="width:100px;">
+          </div>
+        </div>
+        <div class="perf-row"><label>项目名</label><input id="dmws-project-name" placeholder="如：抖音弹幕登录"></div>
+        <div class="perf-row"><label>接口名</label><input id="dmws-endpoint-name" placeholder="如：anchor_register"></div>
+        <div class="perf-row"><label>URL</label><input id="dmws-url" placeholder="https://..."></div>
+        <!-- 平台预设按钮 -->
+        <div class="perf-row" style="gap:6px;">
+          <label style="min-width:56px;">预设</label>
+          <button class="btn btn-outline" style="padding:6px 14px;font-size:12px;" onclick="presetDmWsDy()">🎵 抖音</button>
+          <button class="btn btn-outline" style="padding:6px 14px;font-size:12px;" onclick="presetDmWsKs()">🎬 快手</button>
+        </div>
+        <div class="perf-row"><label>方法</label>
+          <select id="dmws-method"><option>GET</option><option selected>POST</option><option>PUT</option><option>DELETE</option><option>PATCH</option></select>
+        </div>
+        <div style="font-size:12px;color:#888;">Headers</div>
+        <div class="perf-header-list" id="dmws-headers">
+          <div class="perf-header-item">
+            <input placeholder="Key" value="Content-Type">
+            <input placeholder="Value" value="application/json; charset=utf-8">
+            <button class="btn-remove" onclick="removePerfHeader(this)">×</button>
+          </div>
+        </div>
+        <button class="btn btn-outline" style="padding:4px 10px;font-size:12px;align-self:flex-start;" onclick="addDmWsHeader()">+ 添加 Header</button>
+        <textarea class="perf-body-input" id="dmws-body" placeholder='{"roomId": 888888}'></textarea>
+        <input type="hidden" id="dmws-edit-id" value="">
+        <div class="perf-btn-row">
+          <button class="btn btn-primary" id="dmws-save-btn" onclick="saveDmWsProject()">💾 保存</button>
+          <button class="btn btn-outline" id="dmws-cancel-btn" style="display:none;" onclick="cancelDmWsEdit()">取消</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" id="dmws-perf-card" style="display:none;">
+      <div class="card-header">📊 长链接压测结果 — <span id="dmws-perf-name"></span></div>
+      <div class="card-body">
+        <div class="perf-slider-row"><label>并发连接数</label><div class="slider-wrap"><input type="range" id="dmws-perf-concurrency" min="1" max="100" value="5" oninput="document.getElementById('dmws-perf-concurrency-val').textContent=this.value"><span class="val" id="dmws-perf-concurrency-val">5</span></div></div>
+        <div class="perf-slider-row"><label>超时(秒)</label><div class="slider-wrap"><input type="range" id="dmws-perf-timeout" min="5" max="60" value="15" step="5" oninput="document.getElementById('dmws-perf-timeout-val').textContent=this.value"><span class="val" id="dmws-perf-timeout-val">15</span></div></div>
+        <div class="perf-btn-row">
+          <button class="btn-perf-run" id="dmws-perf-run-btn" onclick="runDmWsPerf()">🚀 开始长链接压测</button>
+          <button class="btn btn-outline" onclick="document.getElementById('dmws-perf-card').style.display='none';">关闭</button>
+        </div>
+        <div class="perf-progress" id="dmws-perf-progress" style="display:none;"><div class="perf-progress-bar" id="dmws-perf-progress-bar"></div></div>
+        <!-- 结果指标 -->
+        <div class="perf-metrics" style="margin-top:10px;" id="dmws-perf-metrics">
+          <div class="perf-metric-card"><div class="label">总连接</div><div class="value" id="dmws-total">-</div></div>
+          <div class="perf-metric-card ok"><div class="label">成功</div><div class="value" id="dmws-ok">-</div></div>
+          <div class="perf-metric-card err"><div class="label">失败</div><div class="value" id="dmws-failed">-</div></div>
+          <div class="perf-metric-card"><div class="label">TPS</div><div class="value" id="dmws-tps">-<span class="unit"> 连接/秒</span></div></div>
+        </div>
+        <!-- 总延迟 -->
+        <div style="font-size:12px;color:#888;margin-top:12px;font-weight:600;">📈 总延迟（登录→WS→认证→创建房间）</div>
+        <table class="perf-latency-table">
+          <tr><td>平均</td><td id="dmws-avg">- ms</td></tr>
+          <tr><td>P50</td><td id="dmws-p50">- ms</td></tr>
+          <tr><td>P90</td><td id="dmws-p90">- ms</td></tr>
+          <tr><td>P95</td><td id="dmws-p95">- ms</td></tr>
+          <tr><td>P99</td><td id="dmws-p99">- ms</td></tr>
+          <tr><td>最小</td><td id="dmws-min">- ms</td></tr>
+          <tr><td>最大</td><td id="dmws-max">- ms</td></tr>
+        </table>
+        <!-- 阶段延迟 -->
+        <div style="font-size:12px;color:#888;margin-top:12px;font-weight:600;">⚡ 各阶段延迟（仅成功连接）</div>
+        <table class="perf-latency-table">
+          <tr><td>登录</td><td id="dmws-login">- ms</td></tr>
+          <tr><td>WS连接</td><td id="dmws-ws-conn">- ms</td></tr>
+          <tr><td>认证</td><td id="dmws-auth">- ms</td></tr>
+          <tr><td>创建房间</td><td id="dmws-room">- ms</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<!-- Protobuf 调试视图 -->
+<div id="view-protobuf" class="view-section hidden">
+<link rel="stylesheet" href="/css/protobuf.css">
+<div class="proto-wrap">
+  <!-- 左栏：Proto 加载 & 序列化 -->
+  <div class="card proto-input-card">
+    <div class="card-header">📥 Proto 定义 <span style="font-size:11px;color:#888;">(FileDescriptorProto 文本格式)</span></div>
+    <div class="card-body">
+      <textarea id="proto-text" class="proto-textarea" style="flex:1;min-height:200px;" placeholder="粘贴 FileDescriptorProto 内容（text-format）：&#10;name: &quot;example.proto&quot;&#10;package: &quot;example&quot;&#10;message_type {&#10;  name: &quot;User&quot;&#10;  field { name: &quot;id&quot; number: 1 label: LABEL_OPTIONAL type: TYPE_INT32 }&#10;  field { name: &quot;name&quot; number: 2 label: LABEL_OPTIONAL type: TYPE_STRING }&#10;}"></textarea>
+
+      <div class="btn-row" style="margin-top:8px;">
+        <button class="btn btn-primary" onclick="protoLoad()" style="flex:1;">📦 加载 Proto</button>
+        <button class="btn btn-outline" onclick="protoClear()">🗑 清空</button>
+      </div>
+
+      <div class="proto-section-label" style="margin-top:8px;">已注册 Messages</div>
+      <div class="proto-msg-list" id="proto-msg-list">
+        <span style="color:#999;font-size:12px;">未加载</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 右上：反序列化 -->
+  <div class="card">
+    <div class="card-header">🔓 反序列化（二进制 → JSON）</div>
+    <div class="card-body">
+      <div class="proto-section-label">Message 类型</div>
+      <input id="deser-msg-name" placeholder="如 package.MessageName" style="width:100%;padding:6px 10px;border:1px solid #d9d9d9;border-radius:6px;font-size:13px;margin-bottom:6px;">
+
+      <div class="proto-data-tabs">
+        <button class="proto-data-tab active" onclick="switchProtoDataTab('hex')">Hex</button>
+        <button class="proto-data-tab" onclick="switchProtoDataTab('base64')">Base64</button>
+      </div>
+      <textarea id="deser-data" class="proto-textarea" style="height:80px;" placeholder="粘贴 hex 或 base64 编码的二进制数据"></textarea>
+
+      <button class="btn btn-primary" onclick="protoDeserialize()" style="width:100%;margin-top:6px;">🔍 反序列化</button>
+    </div>
+  </div>
+
+  <!-- 右下：序列化 -->
+  <div class="card">
+    <div class="card-header">🔒 序列化（JSON → 二进制）</div>
+    <div class="card-body">
+      <div class="proto-section-label">Message 类型</div>
+      <input id="ser-msg-name" placeholder="如 package.MessageName" style="width:100%;padding:6px 10px;border:1px solid #d9d9d9;border-radius:6px;font-size:13px;margin-bottom:6px;">
+
+      <div class="proto-section-label">JSON 数据</div>
+      <textarea id="ser-data" class="proto-textarea" style="height:100px;" placeholder='{"id": 42, "name": "hello"}'></textarea>
+
+      <button class="btn btn-primary" onclick="protoSerialize()" style="width:100%;margin-top:6px;">📤 序列化</button>
+    </div>
+  </div>
+
+  <!-- 左下延伸：结果 -->
+  <div class="card" style="grid-column:1/-1;max-height:300px;">
+    <div class="card-header">
+      📄 结果
+      <span id="proto-result-status" style="font-size:11px;margin-left:8px;"></span>
+      <button class="btn btn-outline proto-btn-sm" style="margin-left:auto;" onclick="document.getElementById('proto-result').textContent='';">清空</button>
+    </div>
+    <div class="card-body" style="padding:0;">
+      <pre class="proto-result" id="proto-result" style="margin:0;border-radius:0;">等待操作...</pre>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- 控制台 -->
+<div class="console-panel" id="console-panel" style="display:none;">
+  <div class="console-header" id="console-header">
+    <span>🐛 运行控制台</span>
+    <button class="btn btn-outline console-btn" onclick="clearConsole()">清空</button>
+    <button class="btn btn-outline console-btn" onclick="copyConsole()">复制</button>
+    <button class="btn btn-outline console-btn" onclick="hideConsole()">关闭</button>
+    <span style="flex:1;text-align:right;font-size:11px;" id="console-count"></span>
+    <span style="cursor:pointer;font-size:16px;padding:0 4px;" onclick="toggleConsoleCollapse()" id="console-collapse-icon">▾</span>
+  </div>
+  <div class="console-body" id="console-body"></div>
+</div>
+
+<script src="/js/main.js"></script>
 </body>
 </html>
