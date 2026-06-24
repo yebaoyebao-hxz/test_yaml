@@ -1,0 +1,122 @@
+<section id="perf-view" class="view-section hidden wrap-common perf-wrap">
+  <div class="perf-config-card card-common">
+    <div class="card-body">
+      <div class="mode-switch">
+        <button class="mode-btn active" data-mode="http">HTTP模式</button>
+        <button class="mode-btn" data-mode="ws">WebSocket模式</button>
+      </div>
+      <div class="http-only">
+        <div class="perf-row">
+          <label>请求URL</label>
+          <input type="text" placeholder="https://example.com/api">
+        </div>
+        <div class="perf-row">
+          <label>请求方法</label>
+          <select>
+            <option>GET</option>
+            <option>POST</option>
+            <option>PUT</option>
+            <option>DELETE</option>
+          </select>
+        </div>
+        <div class="perf-row">
+          <label>请求头</label>
+          <div class="perf-header-list">
+            <div class="perf-header-item">
+              <input type="text" placeholder="Key" value="Content-Type">
+              <input type="text" placeholder="Value" value="application/json">
+              <button class="btn-remove">×</button>
+            </div>
+          </div>
+          <button class="btn-common" id="add-header">添加头信息</button>
+        </div>
+        <div class="perf-row">
+          <label>请求体</label>
+          <textarea class="perf-body-input" placeholder='{"key": "value"}'></textarea>
+        </div>
+      </div>
+      <div class="ws-only">
+        <div class="perf-row">
+          <label>WS地址</label>
+          <input type="text" placeholder="wss://example.com/ws">
+        </div>
+        <div class="perf-row">
+          <label>心跳间隔</label>
+          <input type="number" placeholder="秒" value="5">
+        </div>
+      </div>
+      <div class="perf-slider-row">
+        <label>并发数</label>
+        <div class="slider-wrap">
+          <input type="range" min="1" max="100" value="10" id="concurrency-slider">
+          <span class="val" id="concurrency-val">10</span>
+        </div>
+      </div>
+      <div class="perf-slider-row">
+        <label>持续时间</label>
+        <div class="slider-wrap">
+          <input type="range" min="1" max="60" value="10" id="duration-slider">
+          <span class="val" id="duration-val">10</span>
+        </div>
+      </div>
+      <div class="perf-btn-row">
+        <button class="btn-perf-run">开始性能测试</button>
+        <button class="btn-perf-stop">停止测试</button>
+      </div>
+      <div class="perf-progress">
+        <div class="perf-progress-bar"></div>
+      </div>
+    </div>
+  </div>
+  <div>
+    <div class="card-common">
+      <div class="perf-metrics">
+        <div class="perf-metric-card ok">
+          <div class="label">成功请求数</div>
+          <div class="value">0</div>
+          <div class="unit">次</div>
+        </div>
+        <div class="perf-metric-card err">
+          <div class="label">失败请求数</div>
+          <div class="value">0</div>
+          <div class="unit">次</div>
+        </div>
+        <div class="perf-metric-card warn">
+          <div class="label">平均响应时间</div>
+          <div class="value">0</div>
+          <div class="unit">ms</div>
+        </div>
+        <div class="perf-metric-card">
+          <div class="label">QPS</div>
+          <div class="value">0</div>
+          <div class="unit">次/秒</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-common">
+      <h4 style="font-size:14px; margin-bottom:8px; color:#333;">延迟分布</h4>
+      <table class="perf-latency-table">
+        <tr>
+          <td>最小值</td>
+          <td>0 ms</td>
+        </tr>
+        <tr>
+          <td>最大值</td>
+          <td>0 ms</td>
+        </tr>
+        <tr>
+          <td>90分位</td>
+          <td>0 ms</td>
+        </tr>
+        <tr>
+          <td>95分位</td>
+          <td>0 ms</td>
+        </tr>
+        <tr>
+          <td>99分位</td>
+          <td>0 ms</td>
+        </tr>
+      </table>
+    </div>
+  </div>
+</section>
