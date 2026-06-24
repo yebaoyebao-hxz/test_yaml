@@ -1,0 +1,125 @@
+/* Protobuf 调试器专属样式 */
+
+.proto-wrap {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 16px 20px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: auto 1fr;
+  gap: 16px;
+  height: calc(100vh - 104px);
+}
+@media (max-width: 900px) {
+  .proto-wrap { grid-template-columns: 1fr; height: auto; }
+}
+
+.proto-wrap .proto-input-card { grid-row: 1 / 3; }
+
+.proto-section-label {
+  font-size: 12px;
+  color: #888;
+  margin-bottom: 4px;
+  font-weight: 500;
+}
+
+.proto-textarea {
+  width: 100%;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-family: "SF Mono", "Consolas", monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  resize: vertical;
+}
+.proto-textarea:focus { outline: none; border-color: #1a73e8; }
+
+.proto-hex-input {
+  font-family: "SF Mono", "Consolas", monospace;
+  font-size: 13px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+}
+.proto-hex-input:focus { outline: none; border-color: #1a73e8; }
+
+.proto-result {
+  flex: 1;
+  min-height: 0;
+  background: #1e1e2e;
+  color: #cdd6f4;
+  border-radius: 8px;
+  padding: 12px;
+  font-family: "SF Mono", "Consolas", monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.proto-result .key { color: #89b4fa; }
+.proto-result .str { color: #a6e3a1; }
+.proto-result .num { color: #fab387; }
+
+.proto-msg-list {
+  max-height: 120px;
+  overflow-y: auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: flex-start;
+}
+.proto-msg-chip {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 12px;
+  background: #e6f0ff;
+  color: #1a73e8;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all .15s;
+}
+.proto-msg-chip:hover {
+  background: #1a73e8;
+  color: #fff;
+}
+.proto-msg-chip.selected {
+  background: #1a73e8;
+  color: #fff;
+}
+
+.proto-btn-sm {
+  padding: 4px 12px;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 12px;
+  color: #666;
+}
+.proto-btn-sm:hover { border-color: #1a73e8; color: #1a73e8; }
+
+.proto-data-tabs {
+  display: flex;
+  gap: 0;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid #d9d9d9;
+  margin-bottom: 8px;
+}
+.proto-data-tab {
+  flex: 1;
+  padding: 5px 12px;
+  border: none;
+  background: #fafafa;
+  cursor: pointer;
+  font-size: 12px;
+  color: #666;
+}
+.proto-data-tab.active {
+  background: #1a1a2e;
+  color: #fff;
+}
+.proto-data-tab:not(:last-child) { border-right: 1px solid #d9d9d9; }
