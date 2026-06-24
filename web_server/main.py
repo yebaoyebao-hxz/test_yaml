@@ -18,10 +18,10 @@ YAML 测试用例生成器 Web 后台 —— 主入口
   ├── routes_ai_assert.py  ← /api/ai_assert
   ├── routes_db.py         ← /api/db/config, /api/db/records
   ├── routes_danmaku.py    ← /api/danmaku/*
+  ├── routes_wsperf.py     ← /api/perf/ws (长链接压测)
   └── routes_static.py     ← /, /health, /report/<path>
 """
 import io, os, sys
-
 # 确保项目根目录在路径中（支持 python web_server/main.py 方式启动）
 _project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _project_root not in sys.path:
@@ -36,6 +36,7 @@ from web_server.routes_ai_assert import ai_assert_bp
 from web_server.routes_db import db_bp
 from web_server.routes_danmaku import danmaku_bp
 from web_server.routes_static import static_bp
+from web_server.routes_wsperf import wsperf_bp
 
 
 def create_app():
@@ -47,10 +48,31 @@ def create_app():
     app.register_blueprint(db_bp)
     app.register_blueprint(danmaku_bp)
     app.register_blueprint(static_bp)
+    app.register_blueprint(wsperf_bp)
     return app
 
 
+def _kill_port(port):
+    """杀死占用指定端口的进程，避免旧进程残留导致新版本 HTML 不生效"""
+    import subprocess
+    try:
+        out = subprocess.check_output(
+            f'netstat -ano | findstr :{port} | findstr LISTENING',
+            shell=True, text=True, timeout=5
+        )
+        for line in out.strip().split('\n'):
+            parts = line.split()
+            if parts:
+                pid = int(parts[-1])
+                subprocess.run(f'taskkill /F /PID {pid}', shell=True,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                print(f"  ⚠  已清理旧进程 PID={pid}（端口 {port} 被占用）")
+    except Exception:
+        pass  # 端口未被占用或无法清理，正常继续
+
 if __name__ == "__main__":
+    _kill_port(5000)
+
     # 修复 Windows 控制台 UTF-8 输出
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
@@ -68,6 +90,7 @@ if __name__ == "__main__":
 ║           POST /api/batch                    ║
 ║           POST /api/execute                  ║
 ║           POST /api/ai_assert                ║
+║           POST /api/perf/ws  (长链接压测)    ║
 ║           GET  /api/db/records               ║
 ║           GET  /health                       ║
 ╚══════════════════════════════════════════════╝

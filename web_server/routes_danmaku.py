@@ -1,12 +1,51 @@
 # -*- coding: utf-8 -*-
 """弹幕接口: /api/danmaku/*"""
-import json, traceback, time, threading
+import json, traceback, time, threading, struct, random, string
 import requests as _requests
+import websocket as _ws
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+from utils.read_files_tools.regular_control import regular
 from flask import Blueprint, request, jsonify
 
 from web_server.db import get_db_conn
 
+# 动态导入 proto（避免在没有 protobuf 环境时报错）
+try:
+    from utils.msg.msg_pb2 import ReqUserInfo, ReqCreateRoom
+    _HAS_PROTO = True
+except Exception:
+    _HAS_PROTO = False
+    ReqUserInfo = None
+    ReqCreateRoom = None
+
 danmaku_bp = Blueprint("danmaku", __name__)
+
+# ── WS 项目表名 ──
+_WS_PROJECTS_TABLE = "danmaku_ws_projects"
+
+def _ensure_ws_table():
+    """确保 danmaku_ws_projects 表存在"""
+    conn = get_db_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(f"""
+                CREATE TABLE IF NOT EXISTS {_WS_PROJECTS_TABLE} (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    project_category VARCHAR(100) DEFAULT '默认',
+                    project_name VARCHAR(200) NOT NULL,
+                    endpoint_name VARCHAR(200) NOT NULL,
+                    endpoint_url VARCHAR(500) NOT NULL,
+                    method VARCHAR(10) DEFAULT 'POST',
+                    headers TEXT,
+                    body TEXT,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+            """)
+            conn.commit()
+    finally:
+        conn.close()
 
 
 def _row_to_dict(row):
@@ -36,8 +75,18 @@ def _perf_test_single(endpoint, concurrency=5, total_req=20):
             headers = h
     body = endpoint.get('body') or None
 
+    if body:
+        body_str = regular(str(body))
+        try:
+            body_json = json.loads(body_str)
+            rsep = _requests.request(method, url, headers=headers, json=body_json, timeout=10)
+        except json.JSONDecodeError:
+            rsep = _requests.request(method, url, headers=headers, data=body_str, timeout=10)
+
+
     latencies = []
     errors = 0
+    error_logs = []  # 收集错误详情 [{idx, status, body, error}]
     lock = threading.Lock()
     idx = [0]
 
@@ -57,11 +106,21 @@ def _perf_test_single(endpoint, concurrency=5, total_req=20):
                     latencies.append(ms)
                     if resp.status_code >= 400:
                         errors += 1
-            except Exception:
+                        if len(error_logs) < 50:
+                            error_logs.append({
+                                'idx': i + 1, 'status': resp.status_code,
+                                'body': (resp.text or '')[:300], 'error': None
+                            })
+            except Exception as e:
                 ms = (time.time() - t0) * 1000
                 with lock:
                     latencies.append(ms)
                     errors += 1
+                    if len(error_logs) < 50:
+                        error_logs.append({
+                            'idx': i + 1, 'status': 0,
+                            'body': None, 'error': str(e)[:300]
+                        })
 
     threads = []
     for _ in range(concurrency):
@@ -71,7 +130,7 @@ def _perf_test_single(endpoint, concurrency=5, total_req=20):
     for t in threads:
         t.join()
 
-    return latencies, errors
+    return latencies, errors, error_logs
 
 
 @danmaku_bp.route("/api/danmaku/projects", methods=["GET"])
@@ -213,7 +272,7 @@ def api_danmaku_perf(pid):
         finally:
             conn.close()
 
-        latencies, errors = _perf_test_single(ep, concurrency, total_req)
+        latencies, errors, error_logs = _perf_test_single(ep, concurrency, total_req)
         latencies.sort()
         n = len(latencies)
 
@@ -230,6 +289,7 @@ def api_danmaku_perf(pid):
             "ok": n - errors,
             "errors": errors,
             "error_rate": f"{errors / total_req * 100:.1f}%" if total_req else "0%",
+            "error_logs": error_logs,
             "tps": round(n / elapsed, 1) if elapsed > 0 else 0,
             "latency": {
                 "avg": round(sum(latencies) / n) if n > 0 else 0,
@@ -237,6 +297,400 @@ def api_danmaku_perf(pid):
                 "min": latencies[0] if n > 0 else 0,
                 "max": latencies[-1] if n > 0 else 0,
             }
+        })
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ═══════════════════════════════════════════════════════════════
+# 弹幕长链接压测 - 项目管理
+# ═══════════════════════════════════════════════════════════════
+
+@danmaku_bp.route("/api/danmaku/ws-projects", methods=["GET"])
+def api_danmaku_ws_list():
+    """列出所有弹幕 WS 压测项目"""
+    try:
+        _ensure_ws_table()
+        category = request.args.get("category", "")
+        conn = get_db_conn()
+        try:
+            with conn.cursor() as cur:
+                table = _WS_PROJECTS_TABLE
+                if category:
+                    cur.execute(
+                        f"SELECT * FROM {table} WHERE project_category=%s ORDER BY created_at DESC",
+                        (category,)
+                    )
+                else:
+                    cur.execute(f"SELECT * FROM {table} ORDER BY project_category, created_at DESC")
+                rows = cur.fetchall()
+            items = []
+            for r in rows:
+                d = _row_to_dict(r)
+                d['created_at'] = d['created_at'].strftime('%Y-%m-%d %H:%M:%S') if d.get('created_at') else ''
+                d['updated_at'] = d['updated_at'].strftime('%Y-%m-%d %H:%M:%S') if d.get('updated_at') else ''
+                items.append(d)
+            groups = {}
+            for item in items:
+                cat = item.get('project_category', '默认')
+                groups.setdefault(cat, []).append(item)
+            return jsonify({"success": True, "items": items, "groups": groups})
+        finally:
+            conn.close()
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@danmaku_bp.route("/api/danmaku/ws-projects", methods=["POST"])
+def api_danmaku_ws_create():
+    """新增弹幕 WS 压测项目"""
+    try:
+        _ensure_ws_table()
+        body = request.get_json(force=True) or {}
+        project_name = (body.get("project_name") or "").strip()
+        endpoint_name = (body.get("endpoint_name") or "").strip()
+        endpoint_url = (body.get("endpoint_url") or "").strip()
+        if not project_name:
+            return jsonify({"success": False, "error": "项目名称不能为空"}), 400
+        if not endpoint_name:
+            return jsonify({"success": False, "error": "接口名称不能为空"}), 400
+        if not endpoint_url:
+            return jsonify({"success": False, "error": "接口地址不能为空"}), 400
+
+        category = (body.get("project_category") or "默认").strip()
+        method = (body.get("method") or "POST").strip().upper()
+        headers = json.dumps(body.get("headers") or {}, ensure_ascii=False)
+        req_body = body.get("body") or ""
+
+        table = _WS_PROJECTS_TABLE
+        conn = get_db_conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"""INSERT INTO {table}
+                        (project_category, project_name, endpoint_name, endpoint_url, method, headers, body)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+                    (category, project_name, endpoint_name, endpoint_url, method, headers, req_body)
+                )
+                conn.commit()
+                new_id = cur.lastrowid
+            return jsonify({"success": True, "id": new_id, "message": "项目已添加"})
+        finally:
+            conn.close()
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@danmaku_bp.route("/api/danmaku/ws-projects/<int:pid>", methods=["PUT"])
+def api_danmaku_ws_update(pid):
+    """更新弹幕 WS 压测项目"""
+    try:
+        _ensure_ws_table()
+        body = request.get_json(force=True) or {}
+        fields = []
+        values = []
+        for f in ["project_category", "project_name", "endpoint_name", "endpoint_url", "method", "body"]:
+            if f in body:
+                fields.append(f"{f}=%s")
+                values.append(body[f])
+        if "headers" in body:
+            fields.append("headers=%s")
+            values.append(json.dumps(body["headers"], ensure_ascii=False))
+        if not fields:
+            return jsonify({"success": False, "error": "无更新字段"}), 400
+        values.append(pid)
+        table = _WS_PROJECTS_TABLE
+        conn = get_db_conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(f"UPDATE {table} SET {', '.join(fields)} WHERE id=%s", values)
+                conn.commit()
+            return jsonify({"success": True, "message": "已更新"})
+        finally:
+            conn.close()
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@danmaku_bp.route("/api/danmaku/ws-projects/<int:pid>", methods=["DELETE"])
+def api_danmaku_ws_delete(pid):
+    """删除弹幕 WS 压测项目"""
+    try:
+        _ensure_ws_table()
+        table = _WS_PROJECTS_TABLE
+        conn = get_db_conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(f"DELETE FROM {table} WHERE id=%s", (pid,))
+                conn.commit()
+            return jsonify({"success": True, "message": "已删除"})
+        finally:
+            conn.close()
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ═══════════════════════════════════════════════════════════════
+# 弹幕长链接压测 - 执行
+# ═══════════════════════════════════════════════════════════════
+
+# WS 服务器固定地址
+WS_HOST_DEFAULT = "192.168.1.47"
+WS_PORT_DEFAULT = 94
+WS_PATH_DEFAULT = "/game/ws/dsqy"
+
+
+def _pack_frame(user_id, module, cmd, body=b""):
+    """打包二进制帧: userId(8B LE) + module(2B LE) + cmd(2B LE) + body"""
+    return struct.pack('<QHH', user_id, module, cmd) + body
+
+
+def _ws_worker(login_url, method, headers, body_str, timeout_sec, results, lock):
+    """单个 WS 连接的工作线程"""
+    stage = {
+        "login_ms": 0,
+        "ws_connect_ms": 0,
+        "auth_ms": 0,
+        "create_room_ms": 0,
+        "total_ms": 0,
+        "success": False,
+        "error": None,
+    }
+    ws = None
+    t_total = time.time()
+
+
+    try:
+        # ── Stage 1: HTTP 登录 ──
+        t0 = time.time()
+        hdrs = dict(headers) if headers else {}
+        if body_str:
+            try:
+                payload = json.loads(body_str)
+            except Exception:
+                payload = body_str
+        else:
+            payload = {"roomId": random.randint(100000, 999999)}
+
+        resp = _requests.request(
+            method, login_url, headers=hdrs,
+            json=payload if isinstance(payload, dict) else None,
+            data=body_str if not isinstance(payload, dict) else None,
+            timeout=timeout_sec, verify=False
+        )
+        stage["login_ms"] = round((time.time() - t0) * 1000)
+
+        if resp.status_code >= 400:
+            stage["error"] = f"登录 HTTP {resp.status_code}"
+            return
+
+        data = resp.json()
+        if isinstance(data, str):
+            stage["error"] = "登录返回纯文本"
+            return
+
+        # 提取 token 和 userId
+        if "data" in data and isinstance(data["data"], dict):
+            inner = data["data"]
+            token = inner.get("token", "")
+            user_id = int(inner.get("id", 0))
+        else:
+            token = data.get("token", "")
+            user_id = int(data.get("id", 0))
+
+        if not token or not user_id:
+            stage["error"] = f"登录未获取 token 或 userId: token={bool(token)} id={user_id}"
+            return
+
+        # ── Stage 2: WebSocket 连接 ──
+        t0 = time.time()
+        ws_url = f"ws://{WS_HOST_DEFAULT}:{WS_PORT_DEFAULT}{WS_PATH_DEFAULT}?token={token}"
+        ws = _ws.create_connection(ws_url, timeout=timeout_sec)
+        stage["ws_connect_ms"] = round((time.time() - t0) * 1000)
+
+        room_id = random.randint(100000, 999999)
+
+        # ── Stage 3: WS 认证 ──
+        t0 = time.time()
+        if _HAS_PROTO:
+            msg = ReqUserInfo()
+            msg.token = token
+            msg.roomCode = str(room_id)
+            frame = _pack_frame(user_id, module=10, cmd=1, body=msg.SerializeToString())
+        else:
+            # fallback: 空 body
+            frame = _pack_frame(user_id, module=10, cmd=1)
+
+        ws.send_binary(frame)
+
+        # 收认证响应（可能先收到网关消息）
+        ws.settimeout(5)
+        try:
+            raw = ws.recv()
+            if isinstance(raw, bytes) and len(raw) >= 12:
+                rid, mod, cmd_val, _ = struct.unpack_from('<QHH', raw, 0)
+                if mod == 0 and cmd_val == 10001:
+                    # 网关心跳/欢迎，再收一次
+                    try:
+                        raw = ws.recv()
+                    except Exception:
+                        pass
+        except Exception:
+            pass  # 无响应也继续
+
+        stage["auth_ms"] = round((time.time() - t0) * 1000)
+
+        # ── Stage 4: 创建房间 ──
+        t0 = time.time()
+        if _HAS_PROTO:
+            msg2 = ReqCreateRoom()
+            msg2.DifficultyLevel = 1
+            msg2.duel = True
+            msg2.pwd = ""
+            frame2 = _pack_frame(user_id, module=100, cmd=50, body=msg2.SerializeToString())
+        else:
+            frame2 = _pack_frame(user_id, module=100, cmd=50)
+
+        ws.send_binary(frame2)
+
+        # 收创建房间响应
+        ws.settimeout(3)
+        try:
+            ws.recv()
+        except Exception:
+            pass
+
+        stage["create_room_ms"] = round((time.time() - t0) * 1000)
+        stage["total_ms"] = round((time.time() - t_total) * 1000)
+        stage["success"] = True
+
+    except Exception as e:
+        stage["error"] = str(e)[:200]
+        stage["total_ms"] = round((time.time() - t_total) * 1000)
+    finally:
+        if ws:
+            try:
+                ws.close()
+            except Exception:
+                pass
+
+        with lock:
+            results.append(stage)
+
+
+@danmaku_bp.route("/api/danmaku/ws-perf", methods=["POST"])
+def api_danmaku_ws_perf():
+    """
+    弹幕长链接压测
+    请求体: {
+        "project_id": 1,
+        "concurrency": 10,
+        "timeout_sec": 15
+    }
+    """
+    try:
+        _ensure_ws_table()
+        body = request.get_json(force=True) or {}
+        project_id = int(body.get("project_id", 0))
+        concurrency = min(int(body.get("concurrency", 5)), 100)
+        timeout_sec = int(body.get("timeout_sec", 15))
+
+        if not project_id:
+            return jsonify({"success": False, "error": "缺少 project_id"}), 400
+
+        # 加载项目配置
+        table = _WS_PROJECTS_TABLE
+        conn = get_db_conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(f"SELECT * FROM {table} WHERE id=%s", (project_id,))
+                row = cur.fetchone()
+            if not row:
+                return jsonify({"success": False, "error": "项目不存在"}), 404
+            ep = _row_to_dict(row)
+        finally:
+            conn.close()
+
+        login_url = ep["endpoint_url"]
+        method = ep.get("method", "POST")
+        headers = ep.get("headers") or {}
+        body_str = ep.get("body") or ""
+        body_str = regular(body_str)
+
+        t_start = time.time()
+        results = []
+        lock = threading.Lock()
+
+        threads = []
+        for _ in range(concurrency):
+            t = threading.Thread(
+                target=_ws_worker,
+                args=(login_url, method, headers, body_str, timeout_sec, results, lock),
+                daemon=True
+            )
+            threads.append(t)
+            t.start()
+
+        for t in threads:
+            t.join(timeout=timeout_sec + 30)
+
+        elapsed = time.time() - t_start
+        total = len(results)
+        success = sum(1 for r in results if r["success"])
+        failed = total - success
+
+        # 总延迟统计
+        total_lats = sorted([r["total_ms"] for r in results])
+        n = len(total_lats)
+
+        def _p(arr, pct):
+            if not arr:
+                return 0
+            return round(arr[min(int(len(arr) * pct / 100), len(arr) - 1)])
+
+        # 阶段延迟统计（仅成功）
+        ok_results = [r for r in results if r["success"]]
+        def _stage_stats(key):
+            vals = sorted([r[key] for r in ok_results])
+            if not vals:
+                return {"avg": 0, "p50": 0, "min": 0, "max": 0}
+            return {
+                "avg": round(sum(vals) / len(vals)),
+                "p50": _p(vals, 50),
+                "min": vals[0],
+                "max": vals[-1],
+            }
+
+        tps = round(total / elapsed, 1) if elapsed > 0 else 0
+
+        return jsonify({
+            "success": True,
+            "total": total,
+            "ok": success,
+            "failed": failed,
+            "tps": tps,
+            "elapsed_sec": round(elapsed, 2),
+            "latency": {
+                "avg": round(sum(total_lats) / n) if n else 0,
+                "p50": _p(total_lats, 50),
+                "p90": _p(total_lats, 90),
+                "p95": _p(total_lats, 95),
+                "p99": _p(total_lats, 99),
+                "min": total_lats[0] if n else 0,
+                "max": total_lats[-1] if n else 0,
+            },
+            "stage_breakdown": {
+                "login": _stage_stats("login_ms"),
+                "ws_connect": _stage_stats("ws_connect_ms"),
+                "auth": _stage_stats("auth_ms"),
+                "create_room": _stage_stats("create_room_ms"),
+            },
+            "errors": [r["error"] for r in results if r.get("error")][:20],
         })
     except Exception as e:
         traceback.print_exc()

@@ -3,7 +3,7 @@
 conftest.py — 预填充 GetTestCase.case_data 所需缓存。
 支持: CASE_YAML 环境变量 或 data/ 目录自动发现
 """
-import os, glob, yaml
+import os, glob, re, yaml
 
 def pytest_sessionstart(session):
     yaml_path = os.environ.get("CASE_YAML")
@@ -26,7 +26,6 @@ def pytest_sessionstart(session):
     with open(yaml_path, encoding="utf-8") as f:
         raw_text = f.read()
         # 防御 AI 生成的 YAML 有裸标题行
-        import re
     lines, start = raw_text.splitlines(True), 0
     for i, L in enumerate(lines):
         s = L.lstrip()
@@ -65,7 +64,8 @@ def pytest_sessionstart(session):
         }
         CacheHandler.update_cache(cache_name=key, value=entry)
 
-    print(f"[conftest] 缓存已填充 {len([k for k in raw if k != \"case_common\"])} 条用例", flush=True)
+    count = sum(1 for k in raw if k != 'case_common')
+    print(f"[conftest] 缓存已填充 {count} 条用例", flush=True)
 
 
 def _auto_discover_yaml():
