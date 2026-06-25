@@ -171,7 +171,7 @@ def _execute_and_report(yaml_body, safe_name, input_type="", input_content="",
         return result
 
     common = case_data.get("case_common", {})
-    case_ids = [k for k in case_data.keys() if k != "case_common"]
+    case_ids = [k for k in case_data.keys() if k != "case_common" and isinstance(case_data[k], dict)]
     if not case_ids:
         result["success"] = False
         result["error"] = "YAML 中没有用例"

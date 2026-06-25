@@ -197,7 +197,7 @@ def sql_regular(value, res=None):
     sql_json_list = re.findall(r"\$json\((.*?)\)\$", value)
 
     for i in sql_json_list:
-        pattern = re.compile(r'\$json\(' + i.replace('$', "\$").replace('[', '\[') + r'\)\$')
+        pattern = re.compile(r'\$json\(' + i.replace('$', r'\$').replace('[', r'\[') + r'\)\$')
         key = str(sql_json(i, res))
         value = re.sub(pattern, key, value, count=1)
 
@@ -225,7 +225,7 @@ def cache_regular(value):
             pattern = re.compile(r'\'\$cache\{' + value_types.split(":")[0] + ":" + regular_data + r'\}\'')
         else:
             pattern = re.compile(
-                r'\$cache\{' + regular_data.replace('$', "\$").replace('[', '\[') + r'\}'
+                r'\$cache\{' + regular_data.replace('$', r'\$').replace('[', r'\[') + r'\}'
             )
         try:
             # cache_data = Cache(regular_data).get_cache()

@@ -585,11 +585,8 @@ def _parse_raw_output(raw: str, model: str = "") -> YamlCase:
     """从 AI 原始返回解析出简述 + YAML，自动剥离 AI 废话前缀"""
     if not raw or not raw.strip():
         return YamlCase(success=False, error="AI 返回为空", model=model)
-
-    text = raw.strip()
-
     # ── 自动剥离 AI 废话前缀 ──
-    # 找第一个 YAML 结构行：case_common: 或 case_key_01:
+    text = raw.strip()
     lines = text.split("\n")
     yaml_start = None
     summary_idx = None
@@ -606,7 +603,7 @@ def _parse_raw_output(raw: str, model: str = "") -> YamlCase:
                     continue
                 garbage_patterns = [
                     "以下是根据", "根据您", "好的", "明白了",
-                    "```", "以下是", "为您生成", "测试用例YAML",
+                    "```", "以下是", "为您生成", "测试用例YAML","xxxx测试用例_共x条",
                 ]
                 if not any(p in prev for p in garbage_patterns):
                     summary_idx = j

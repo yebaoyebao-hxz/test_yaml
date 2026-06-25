@@ -3,7 +3,7 @@
 conftest.py — 预填充 GetTestCase.case_data 所需缓存。
 支持: CASE_YAML 环境变量 或 data/ 目录自动发现
 """
-import os, glob, yaml
+import os, glob, re, yaml
 
 def pytest_sessionstart(session):
     yaml_path = os.environ.get("CASE_YAML")
@@ -26,13 +26,12 @@ def pytest_sessionstart(session):
     with open(yaml_path, encoding="utf-8") as f:
         raw_text = f.read()
         # 防御 AI 生成的 YAML 有裸标题行
-        import re
     lines, start = raw_text.splitlines(True), 0
     for i, L in enumerate(lines):
         s = L.lstrip()
         if not s or s.startswith('#') or s.startswith('---'):
             continue
-        if len(L) - len(s) == 0 and re.match(r'^[a-zA-Z_一-鿿][\w一-鿿-]*\s*:', s):
+        if len(L) - len(s) == 0 and re.match(r'^[a-zA-Z_\u4e00-\u9fff][\w\u4e00-\u9fff-]*\s*:', s):
             start = i
             break
     raw_text = ''.join(lines[start:])
@@ -65,7 +64,8 @@ def pytest_sessionstart(session):
         }
         CacheHandler.update_cache(cache_name=key, value=entry)
 
-    print(f"[conftest] 缓存已填充 {len([k for k in raw if k != "case_common"])} 条用例", flush=True)
+    count = sum(1 for k in raw if k != 'case_common')
+    print(f"[conftest] 缓存已填充 {count} 条用例", flush=True)
 
 
 def _auto_discover_yaml():
@@ -74,7 +74,8 @@ def _auto_discover_yaml():
     data_dir = os.path.join(project_root, "data")
     if not os.path.isdir(data_dir):
         return None
-    yaml_files = glob.glob(os.path.join(data_dir, "*.yaml")) +                  glob.glob(os.path.join(data_dir, "*.yml"))
+    yaml_files = glob.glob(os.path.join(data_dir, "*.yaml")) + \
+                 glob.glob(os.path.join(data_dir, "*.yml"))
     if not yaml_files:
         return None
     yaml_files.sort(key=os.path.getmtime, reverse=True)

@@ -2,8 +2,20 @@
 # -*- coding: utf-8 -*-
 import ast
 import json
-from typing import Dict, Text
+from typing import Dict, Text, Any
 import jsonpath as _jsonpath
+
+
+def _safe_loads(data: Any, fallback=None) -> Any:
+    """安全 json.loads：空响应/非 JSON 返回 fallback（默认 {}），避免 json.loads('') 崩溃"""
+    if fallback is None:
+        fallback = {}
+    if not data or not isinstance(data, str) or not data.strip():
+        return fallback
+    try:
+        return json.loads(data)
+    except json.JSONDecodeError:
+        return fallback
 
 
 def _jp(data, expr):
@@ -267,7 +279,7 @@ class TearDownHandler:
                 self.dependent_self_response(
                     teardown_case_data=i,
                     resp_data=resp_data,
-                    res=json.loads(res.response_data)
+                    res=_safe_loads(res.response_data)
                 )
 
     def teardown_handle(self) -> None:
@@ -295,13 +307,13 @@ class TearDownHandler:
                 if _data.param_prepare is not None:
                     self.param_prepare_request_handler(
                         data=_data,
-                        resp_data=json.loads(_resp_data)
+                        resp_data=_safe_loads(_resp_data)
                     )
                 elif _data.send_request is not None:
                     self.send_request_handler(
                         data=_data,
                         request_data=_request_data,
-                        resp_data=json.loads(_resp_data)
+                        resp_data=_safe_loads(_resp_data)
                     )
         self.teardown_sql()
 
@@ -313,7 +325,7 @@ class TearDownHandler:
         if sql_data is not None:
             for i in sql_data:
                 if config.mysql_db.switch:
-                    _sql_data = sql_regular(value=i, res=json.loads(_response_data))
+                    _sql_data = sql_regular(value=i, res=_safe_loads(_response_data))
                     MysqlDB().execute(cache_regular(_sql_data))
                 else:
                     WARNING.logger.warning("程序中检查到您数据库开关为关闭状态，已为您跳过删除sql: %s", i)

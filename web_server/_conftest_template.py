@@ -42,6 +42,8 @@ def pytest_sessionstart(session):
     for key, case in raw.items():
         if key == "case_common":
             continue
+        if not isinstance(case, dict):
+            continue
         host_val = common.get("host", "") or case.get("host", "")
         url = (host_val or "") + (case.get("url", "") or "")
         entry = {

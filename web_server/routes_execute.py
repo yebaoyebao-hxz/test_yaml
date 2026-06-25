@@ -105,7 +105,7 @@ def api_execute():
             }), 400
 
         common = case_data.get("case_common", {})
-        case_ids = [k for k in case_data.keys() if k != "case_common"]
+        case_ids = [k for k in case_data.keys() if k != "case_common" and isinstance(case_data[k], dict)]
 
         feature = common.get("allureFeature", "") or common.get("allureEpic", "")
         yaml_stem = _safe_ident(feature) if feature and _safe_ident(feature) != "auto_case" else _safe_ident(safe_name)

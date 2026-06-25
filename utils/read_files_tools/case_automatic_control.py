@@ -98,7 +98,7 @@ class TestCaseAutomaticGeneration:
     def get_case_path(self):
         """
         根据 yaml 中的用例，生成对应 testCase 层代码的路径
-        :return: E:\yebao\test_yaml\test_api\test_demo2.py
+        :return: E:/yebao/test_yaml/test_api/test_demo2.py
         """
         new_name = os.sep.join(self.spilt_path)
         return ensure_path("\\test_case" + new_name)
