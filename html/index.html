@@ -147,6 +147,7 @@
           <th>摘要</th>
           <th>执行状态</th>
           <th>时间</th>
+          <th>保留</th>
           <th>操作</th>
         </tr>
       </thead>
@@ -286,8 +287,9 @@
       <div class="dm-project-list" id="dm-project-list">
         <div class="dm-empty">加载中...</div>
       </div>
-      <div style="padding:10px;">
-        <button class="btn btn-primary" style="width:100%;" onclick="showDmForm()">+ 新增项目</button>
+      <div style="padding:10px;display:flex;gap:8px;">
+        <button class="btn btn-primary" style="flex:1;" onclick="showDmForm()">+ 新增项目</button>
+        <button class="btn btn-outline" style="flex:1;" onclick="openDmAiGenModal()">🤖 AI用例生成</button>
       </div>
     </div>
   </div>
@@ -320,9 +322,16 @@
         <button class="btn btn-outline" style="padding:4px 10px;font-size:12px;align-self:flex-start;" onclick="addDmHeader()">+ 添加 Header</button>
         <textarea class="perf-body-input" id="dm-body" placeholder='{"key": "value"}'></textarea>
         <input type="hidden" id="dm-edit-id" value="">
-        <div class="perf-btn-row">
-          <button class="btn btn-primary" id="dm-save-btn" onclick="saveDmProject()">💾 保存</button>
-          <button class="btn btn-outline" id="dm-cancel-btn" style="display:none;" onclick="cancelDmEdit()">取消</button>
+        <div class="perf-btn-row" style="justify-content:space-between;">
+          <label class="normalize-toggle" title="选中后该条记录永久保留，不会被自动清理">
+            <input type="checkbox" id="dm-keep-flag">
+            <span class="toggle-track"></span>
+            <span class="toggle-label">永久保留</span>
+          </label>
+          <div>
+            <button class="btn btn-primary" id="dm-save-btn" onclick="saveDmProject()">💾 保存</button>
+            <button class="btn btn-outline" id="dm-cancel-btn" style="display:none;" onclick="cancelDmEdit()">取消</button>
+          </div>
         </div>
       </div>
     </div>
@@ -432,9 +441,16 @@
         <button class="btn btn-outline" style="padding:4px 10px;font-size:12px;align-self:flex-start;" onclick="addDmWsHeader()">+ 添加 Header</button>
         <textarea class="perf-body-input" id="dmws-body" placeholder='{"roomId": 888888}'></textarea>
         <input type="hidden" id="dmws-edit-id" value="">
-        <div class="perf-btn-row">
-          <button class="btn btn-primary" id="dmws-save-btn" onclick="saveDmWsProject()">💾 保存</button>
-          <button class="btn btn-outline" id="dmws-cancel-btn" style="display:none;" onclick="cancelDmWsEdit()">取消</button>
+        <div class="perf-btn-row" style="justify-content:space-between;">
+          <label class="normalize-toggle" title="选中后该条记录永久保留，不会被自动清理">
+            <input type="checkbox" id="dmws-keep-flag">
+            <span class="toggle-track"></span>
+            <span class="toggle-label">永久保留</span>
+          </label>
+          <div>
+            <button class="btn btn-primary" id="dmws-save-btn" onclick="saveDmWsProject()">💾 保存</button>
+            <button class="btn btn-outline" id="dmws-cancel-btn" style="display:none;" onclick="cancelDmWsEdit()">取消</button>
+          </div>
         </div>
       </div>
     </div>
@@ -562,6 +578,34 @@
     <span style="cursor:pointer;font-size:16px;padding:0 4px;" onclick="toggleConsoleCollapse()" id="console-collapse-icon">▾</span>
   </div>
   <div class="console-body" id="console-body"></div>
+</div>
+
+<!-- AI用例生成弹窗 -->
+<div class="modal-overlay hidden" id="dm-ai-gen-modal">
+  <div class="modal-box">
+    <div class="modal-header">
+      🤖 AI用例生成 — 选择接口
+      <button class="modal-close" onclick="closeDmAiGenModal()">✕</button>
+    </div>
+    <div class="modal-body" id="dm-ai-gen-body">
+      <div class="sel-all-row">
+        <input type="checkbox" id="dm-ai-sel-all" onchange="dmAiToggleAll(this)">
+        <label for="dm-ai-sel-all">全选 / 取消全选</label>
+        <span style="margin-left:auto;font-size:12px;color:#aaa;" id="dm-ai-sel-count">已选 0 个</span>
+      </div>
+      <div id="dm-ai-endpoint-list">加载中...</div>
+    </div>
+    <div class="modal-gen-progress" id="dm-ai-gen-progress">
+      <span class="spinner" style="width:16px;height:16px;border:2px solid #ccc;border-top-color:#1a73e8;border-radius:50%;animation:spin .6s linear infinite;display:inline-block;"></span>
+      <span id="dm-ai-gen-status">生成中...</span>
+    </div>
+    <div class="modal-gen-result" id="dm-ai-gen-result" hidden></div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeDmAiGenModal()">取消</button>
+      <button class="btn btn-outline" id="dm-ai-smoke-btn" onclick="doDmAiGenerate('smoke')" disabled title="需选择2个及以上接口">🧪 冒烟用例</button>
+      <button class="btn btn-primary" id="dm-ai-stress-btn" onclick="doDmAiGenerate('stress')">⚡ 压测用例</button>
+    </div>
+  </div>
 </div>
 
 <script src="/js/main.js"></script>

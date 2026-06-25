@@ -564,6 +564,7 @@ function filterRecords() {
       '<td><div class="cell-summary" title="' + escapeHtml(r.summary||'') + '">' + escapeHtml(summary||'-') + '</div></td>' +
       '<td>' + execTag + '</td>' +
       '<td style="font-size:12px;color:#888;white-space:nowrap;">' + (r.created_at||'-') + '</td>' +
+      '<td><label class="normalize-toggle" title="永久保留此记录"><input type="checkbox" ' + (r.keep_flag ? 'checked' : '') + ' onchange="toggleRecordKeep(' + r.id + ', this.checked)"><span class="toggle-track"></span></label></td>' +
       '<td class="cell-actions"><button ' + reExecDisabled + ' ' + reExecTitle + ' onclick="reExecute(' + r.id + ')">🔄 再次执行</button></td>' +
     '</tr>';
   }).join('');
@@ -607,6 +608,21 @@ async function reExecute(id) {
 
   // 拉起控制台执行
   doExecute();
+}
+
+async function toggleRecordKeep(id, checked) {
+  try {
+    const resp = await fetch('/api/db/records/' + id + '/keep', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keep_flag: checked ? 1 : 0 })
+    });
+    const data = await resp.json();
+    if (!data.success) { showToast('更新失败: ' + data.error, 'err'); return; }
+    const rec = allRecords.find(r => r.id === id);
+    if (rec) rec.keep_flag = checked ? 1 : 0;
+    showToast(checked ? '已设为永久保留' : '已取消保留');
+  } catch (e) { showToast('操作异常: ' + e.message, 'err'); }
 }
 
 // ── 性能测试 ──
@@ -1104,6 +1120,7 @@ function showDmForm() {
   document.getElementById('dm-method').value = 'GET';
   document.getElementById('dm-body').value = '';
   document.getElementById('dm-new-cat').value = '';
+  document.getElementById('dm-keep-flag').checked = false;
   document.getElementById('dm-headers').innerHTML = '<div class="perf-header-item"><input placeholder="Key" value="User-Agent"><input placeholder="Value" value="UnityPlayer/2023.1.13f1 (UnityWebRequest/1.0, libcurl/8.1.1-DEV)"><button class="btn-remove" onclick="removePerfHeader(this)">×</button></div>' +
     '<div class="perf-header-item"><input placeholder="Key" value="X-Unity-Version"><input placeholder="Value" value="2023.1.13f1"><button class="btn-remove" onclick="removePerfHeader(this)">×</button></div>';
   document.getElementById('dm-save-btn').textContent = '💾 保存';
@@ -1128,6 +1145,7 @@ function editDmProject(id) {
   document.getElementById('dm-method').value = item.method || 'GET';
   document.getElementById('dm-body').value = item.body || '';
   document.getElementById('dm-new-cat').value = '';
+  document.getElementById('dm-keep-flag').checked = !!item.keep_flag;
   // Headers
   let headers = item.headers;
   if (typeof headers === 'string') { try { headers = JSON.parse(headers); } catch(e) { headers = {}; } }
@@ -1160,6 +1178,7 @@ function viewDmProject(id) {
   document.getElementById('dm-method').value = item.method || 'GET';
   document.getElementById('dm-body').value = item.body || '';
   document.getElementById('dm-new-cat').value = '';
+  document.getElementById('dm-keep-flag').checked = !!item.keep_flag;
 
   let headers = item.headers;
   if (typeof headers === 'string') { try { headers = JSON.parse(headers); } catch(e) { headers = {}; } }
@@ -1186,6 +1205,9 @@ function _setDmFormDisabled(disabled) {
     const el = document.getElementById(id);
     if (el) el.disabled = disabled;
   });
+  // keep-flag toggle
+  const keepFlag = document.getElementById('dm-keep-flag');
+  if (keepFlag) keepFlag.disabled = disabled;
   // Headers 内的 input 和按钮
   document.querySelectorAll('#dm-headers input').forEach(inp => inp.disabled = disabled);
   document.querySelectorAll('#dm-headers .btn-remove').forEach(b => { b.style.display = disabled ? 'none' : ''; });
@@ -1227,7 +1249,8 @@ async function saveDmProject() {
     project_category: category,
     method: document.getElementById('dm-method').value,
     headers: getDmHeaders(),
-    body: document.getElementById('dm-body').value.trim()
+    body: document.getElementById('dm-body').value.trim(),
+    keep_flag: document.getElementById('dm-keep-flag').checked ? 1 : 0
   };
 
   const id = dmEditingId;
@@ -1410,6 +1433,7 @@ function showDmWsForm() {
   document.getElementById('dmws-method').value = 'POST';
   document.getElementById('dmws-body').value = '';
   document.getElementById('dmws-new-cat').value = '';
+  document.getElementById('dmws-keep-flag').checked = false;
   document.getElementById('dmws-headers').innerHTML =
     '<div class="perf-header-item"><input placeholder="Key" value="Content-Type"><input placeholder="Value" value="application/json; charset=utf-8"><button class="btn-remove" onclick="removePerfHeader(this)">×</button></div>';
   document.getElementById('dmws-save-btn').textContent = '💾 保存';
@@ -1435,6 +1459,7 @@ function editDmWsProject(id) {
   document.getElementById('dmws-category').value = item.project_category || '默认';
   document.getElementById('dmws-body').value = item.body || '';
   document.getElementById('dmws-new-cat').value = '';
+  document.getElementById('dmws-keep-flag').checked = !!item.keep_flag;
   let headers = item.headers;
   if (typeof headers === 'string') { try { headers = JSON.parse(headers); } catch(e) { headers = {}; } }
   if (headers && typeof headers === 'object' && Object.keys(headers).length > 0) {
@@ -1466,6 +1491,7 @@ function viewDmWsProject(id) {
   document.getElementById('dmws-category').value = item.project_category || '默认';
   document.getElementById('dmws-body').value = item.body || '';
   document.getElementById('dmws-new-cat').value = '';
+  document.getElementById('dmws-keep-flag').checked = !!item.keep_flag;
   let headers = item.headers;
   if (typeof headers === 'string') { try { headers = JSON.parse(headers); } catch(e) { headers = {}; } }
   if (headers && typeof headers === 'object' && Object.keys(headers).length > 0) {
@@ -1489,6 +1515,9 @@ function _setDmWsFormDisabled(disabled) {
     const el = document.getElementById(id);
     if (el) el.disabled = disabled;
   });
+  // keep-flag toggle
+  const keepFlag = document.getElementById('dmws-keep-flag');
+  if (keepFlag) keepFlag.disabled = disabled;
   document.querySelectorAll('#dmws-headers input').forEach(inp => inp.disabled = disabled);
   document.querySelectorAll('#dmws-headers .btn-remove').forEach(b => { b.style.display = disabled ? 'none' : ''; });
   const addBtn = document.querySelector('#dmws-form-title')?.closest('.card')?.querySelector('.btn-outline');
@@ -1527,7 +1556,8 @@ async function saveDmWsProject() {
     project_category: category,
     method: document.getElementById('dmws-method').value,
     headers: getDmWsHeaders(),
-    body: document.getElementById('dmws-body').value.trim()
+    body: document.getElementById('dmws-body').value.trim(),
+    keep_flag: document.getElementById('dmws-keep-flag').checked ? 1 : 0
   };
   const id = dmWsEditingId;
   const url = id ? '/api/danmaku/ws-projects/' + id : '/api/danmaku/ws-projects';
@@ -1886,4 +1916,161 @@ async function protoClear() {
   document.getElementById('proto-msg-list').innerHTML = '<span style="color:#999;font-size:12px;">未加载</span>';
   try { await fetch('/api/proto/clear', { method: 'POST' }); } catch (e) {}
   showToast('已清空', 'ok');
+}
+// ═══════ 弹幕 AI 用例生成 ═══════
+function openDmAiGenModal() {
+  const modal = document.getElementById('dm-ai-gen-modal');
+  const listEl = document.getElementById('dm-ai-endpoint-list');
+  modal.classList.remove('hidden');
+  listEl.innerHTML = '<div class="dm-empty">加载中...</div>';
+  document.getElementById('dm-ai-sel-all').checked = false;
+  document.getElementById('dm-ai-sel-count').textContent = '已选 0 个';
+  document.getElementById('dm-ai-gen-result').hidden = true;
+  document.getElementById('dm-ai-gen-progress').style.display = 'none';
+
+  const items = dmAllItems.length > 0 ? dmAllItems : [];
+  if (items.length === 0) {
+    listEl.innerHTML = '<div class="dm-empty">暂无弹幕项目，请先添加</div>';
+    return;
+  }
+  listEl.innerHTML = items.map(r => {
+    const m = r.method || 'GET';
+    return '<div class="endpoint-check-row">' +
+      '<input type="checkbox" value="' + r.id + '" onchange="dmAiUpdateSelCount()">' +
+      '<div class="endpoint-info">' +
+        '<div class="ename">' + escapeHtml(r.endpoint_name) + '</div>' +
+        '<div class="eurl">' + escapeHtml(r.endpoint_url) + '</div>' +
+        '<div class="emeta">' + escapeHtml(r.project_name) + ' · ' + m + ' · ' + escapeHtml(r.project_category || '默认') + '</div>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+  dmAiUpdateSelCount();
+}
+
+function closeDmAiGenModal() {
+  document.getElementById('dm-ai-gen-modal').classList.add('hidden');
+}
+
+function dmAiToggleAll(cb) {
+  const checks = document.querySelectorAll('#dm-ai-endpoint-list input[type=checkbox]');
+  checks.forEach(c => { c.checked = cb.checked; });
+  dmAiUpdateSelCount();
+}
+
+function dmAiUpdateSelCount() {
+  const checks = document.querySelectorAll('#dm-ai-endpoint-list input[type=checkbox]:checked');
+  const n = checks.length;
+  document.getElementById('dm-ai-sel-count').textContent = '已选 ' + n + ' 个';
+  // 压测按钮：选了就能用；冒烟按钮：≥2 个才启用
+  document.getElementById('dm-ai-stress-btn').disabled = n === 0;
+  document.getElementById('dm-ai-smoke-btn').disabled = n < 2;
+}
+
+async function doDmAiGenerate(caseType) {
+  const checks = document.querySelectorAll('#dm-ai-endpoint-list input[type=checkbox]:checked');
+  const ids = Array.from(checks).map(c => parseInt(c.value));
+  if (ids.length === 0) { showToast('请至少选择一个接口', 'err'); return; }
+
+  const isStress = caseType === 'stress';
+  const genBtn = document.getElementById(isStress ? 'dm-ai-stress-btn' : 'dm-ai-smoke-btn');
+  const otherBtn = document.getElementById(isStress ? 'dm-ai-smoke-btn' : 'dm-ai-stress-btn');
+  const progressDiv = document.getElementById('dm-ai-gen-progress');
+  const statusSpan = document.getElementById('dm-ai-gen-status');
+  const resultDiv = document.getElementById('dm-ai-gen-result');
+
+  genBtn.disabled = true;
+  if (otherBtn) otherBtn.disabled = true;
+  genBtn.textContent = '⏳ 生成中...';
+  progressDiv.style.display = 'flex';
+  statusSpan.textContent = '正在生成，请稍候...';
+  resultDiv.hidden = true;
+
+  try {
+    const resp = await fetch('/api/danmaku/ai-generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids, case_type: caseType })
+    });
+    const data = await resp.json();
+    progressDiv.style.display = 'none';
+
+    if (!data.success) {
+      resultDiv.hidden = false;
+      resultDiv.innerHTML = '<div style="color:#e74c3c;">生成失败: ' + escapeHtml(data.error || '未知错误') + '</div>';
+      return;
+    }
+
+    const results = data.results || [];
+    const okResults = results.filter(r => r.success);
+    const errCount = results.length - okResults.length;
+
+    // ── 弹窗展示结果（折叠详情） ──
+    let html = '<div style="margin-bottom:8px;font-weight:600;color:#22c55e;">' +
+      '✅ 生成完成: ' + okResults.length + ' 成功' +
+      (errCount > 0 ? ', <span style="color:#e74c3c;">' + errCount + ' 失败</span>' : '') +
+      '</div>';
+    html += '<div style="font-size:12px;color:#999;margin-bottom:8px;">' +
+      '已自动跳转到「接口用例生成」页签，点击 <b>⚡ 执行用例</b> 即可运行</div>';
+    results.forEach(r => {
+      if (r.success) {
+        html += '<details style="margin:6px 0;border:1px solid #e0e0e0;border-radius:6px;padding:8px;">' +
+          '<summary style="cursor:pointer;font-weight:600;color:#333;">' + escapeHtml(r.endpoint_name || r.summary || '用例') + '</summary>' +
+          '<pre style="font:11px/1.5 Consolas,monospace;background:#f8f8f8;padding:8px;border-radius:4px;overflow-x:auto;white-space:pre-wrap;word-break:break-all;">' + escapeHtml(r.yaml_body || r.yaml || '') + '</pre>' +
+        '</details>';
+      } else {
+        html += '<div style="color:#e74c3c;margin:4px 0;font-size:12px;">❌ ' + escapeHtml(r.endpoint_name || '') + ': ' + escapeHtml(r.error || '未知错误') + '</div>';
+      }
+    });
+    resultDiv.hidden = false;
+    resultDiv.innerHTML = html;
+
+    // ── 切到「接口用例生成」页签，自动填充第一条成功用例 ──
+    if (okResults.length > 0) {
+      const first = okResults[0];
+      // 填充 currentResult
+      currentResult = {
+        summary: first.summary || first.endpoint_name || '弹幕用例',
+        yaml: first.yaml_body || first.yaml || '',
+        yaml_body: first.yaml_body || first.yaml || '',
+        raw: first.yaml_body || first.yaml || '',
+        model: data.model || ''
+      };
+      // 写入 HTML 区域
+      document.getElementById('yaml-output').value = currentResult.yaml_body;
+      document.getElementById('summary-box').textContent = currentResult.summary;
+      document.getElementById('model-tag').textContent = currentResult.model || '';
+      document.getElementById('status-badge').innerHTML =
+        '<span class="badge badge-success">✓ AI 批生成</span>';
+
+      // 模拟文本输入（让 doExecute 的 getInputContent 有值）
+      activeTab = 'text';
+      document.getElementById('text-input').value =
+        first.endpoint_name ? ('弹幕接口: ' + first.endpoint_name) : '';
+      // 同步标签按钮
+      document.querySelectorAll('#view-generate .tab-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.tab === 'text');
+      });
+      ['curl', 'text', 'image'].forEach(t => {
+        const el = document.getElementById(t + '-group');
+        if (el) el.classList.toggle('hidden', t !== 'text');
+      });
+
+      addHistory(currentResult);
+      // 关闭弹窗，跳转到生成页
+      closeDmAiGenModal();
+      switchPage('generate');
+    }
+
+    showToast('生成完成: ' + okResults.length + '/' + results.length + ' 成功，已跳转到用例生成页');
+  } catch (e) {
+    progressDiv.style.display = 'none';
+    resultDiv.hidden = false;
+    resultDiv.innerHTML = '<div style="color:#e74c3c;">网络错误: ' + escapeHtml(e.message) + '</div>';
+    showToast('网络错误', 'err');
+  } finally {
+    genBtn.disabled = false;
+    genBtn.textContent = isStress ? '⚡ 压测用例' : '🧪 冒烟用例';
+    // 恢复另一个按钮状态（冒烟需 ≥2 个才启用）
+    dmAiUpdateSelCount();
+  }
 }

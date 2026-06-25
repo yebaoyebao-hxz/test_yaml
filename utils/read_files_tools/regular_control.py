@@ -17,6 +17,7 @@ def _jp(data, expr):
     return result
 
 class Context:
+    _inc_counter = 0
     def __init__(self):
         self.faker = Faker(locale='zh_CN')
 
@@ -56,6 +57,15 @@ class Context:
         """随机 UUID: ${{uuid4()}}"""
         import uuid
         return str(uuid.uuid4())
+
+    @classmethod
+    def random_incr(cls, n=None) -> int:
+        """自增ID，支持设初始值: ${{increment_id(1000)}}"""
+        if n is not None:
+            cls._inc_counter = int(n)
+        val = cls._inc_counter
+        cls._inc_counter += 1
+        return val
 
     @classmethod
     def timestamp(cls) -> int:
