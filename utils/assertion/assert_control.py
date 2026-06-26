@@ -9,6 +9,7 @@ import httpx
 import jsonpath as _jsonpath
 from openai import OpenAI
 from openai.types.chat import ChatCompletionMessageParam
+from pyexpat.errors import messages
 
 from api_config import AI_Config
 
@@ -146,20 +147,9 @@ class AssertUtil:
     def functions_mapping():
         return load_module_functions(assert_type)
 
-    @staticmethod
-    def _safe_json(data: str) -> Any:
-        """安全解析 JSON：空响应 / 非 JSON 返回 {}，避免 json.loads('') 崩溃"""
-        if not data or not isinstance(data, str) or not data.strip():
-            return {}
-        try:
-            return json.loads(data)
-        except json.JSONDecodeError:
-            WARNING.logger.warning(f"响应非 JSON，原始内容(前200字符): {str(data)[:200]}")
-            return {}
-
     @property
     def get_response_data(self):
-        return self._safe_json(self.response_data)
+        return json.loads(self.response_data)
 
     @property
     def sql_switch_handle(self):
@@ -217,10 +207,7 @@ class Assert(AssertUtil):
 
     def assert_data_list(self):
         assert_list = []
-        ad = self.get_assert_data
-        if not isinstance(ad, dict):
-            return assert_list
-        for k, v in ad.items():
+        for k, v in self.assert_data.items():
             if k == "status_code":
                 assert self.status_code == v, "响应状态码断言失败"
             else:

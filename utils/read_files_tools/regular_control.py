@@ -17,7 +17,6 @@ def _jp(data, expr):
     return result
 
 class Context:
-    _inc_counter = 0
     def __init__(self):
         self.faker = Faker(locale='zh_CN')
 
@@ -57,15 +56,6 @@ class Context:
         """随机 UUID: ${{uuid4()}}"""
         import uuid
         return str(uuid.uuid4())
-
-    @classmethod
-    def random_incr(cls, n=None) -> int:
-        """自增ID，支持设初始值: ${{increment_id(1000)}}"""
-        if n is not None:
-            cls._inc_counter = int(n)
-        val = cls._inc_counter
-        cls._inc_counter += 1
-        return val
 
     @classmethod
     def timestamp(cls) -> int:
@@ -128,10 +118,6 @@ def regular(target):
         regular_pattern = r'\${{(.*?)}}'
         while re.findall(regular_pattern, target):
             key = re.search(regular_pattern, target).group(1)
-            # 防御：不包含 "(" 说明不是函数调用，去掉 ${{ }} 包装保留原文
-            if '(' not in key or ')' not in key:
-                target = re.sub(regular_pattern, key, target, 1)
-                continue
             value_types = ['int:', 'bool:', 'list:', 'dict:', 'tuple:', 'float:']
             if any(i in key for i in value_types) is True:
                 func_name = key.split(":")[1].split("(")[0]
@@ -197,7 +183,7 @@ def sql_regular(value, res=None):
     sql_json_list = re.findall(r"\$json\((.*?)\)\$", value)
 
     for i in sql_json_list:
-        pattern = re.compile(r'\$json\(' + i.replace('$', r'\$').replace('[', r'\[') + r'\)\$')
+        pattern = re.compile(r'\$json\(' + i.replace('$', "\$").replace('[', '\[') + r'\)\$')
         key = str(sql_json(i, res))
         value = re.sub(pattern, key, value, count=1)
 
@@ -225,7 +211,7 @@ def cache_regular(value):
             pattern = re.compile(r'\'\$cache\{' + value_types.split(":")[0] + ":" + regular_data + r'\}\'')
         else:
             pattern = re.compile(
-                r'\$cache\{' + regular_data.replace('$', r'\$').replace('[', r'\[') + r'\}'
+                r'\$cache\{' + regular_data.replace('$', "\$").replace('[', '\[') + r'\}'
             )
         try:
             # cache_data = Cache(regular_data).get_cache()

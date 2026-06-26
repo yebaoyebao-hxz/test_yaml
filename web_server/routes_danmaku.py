@@ -1,8 +1,6 @@
 # -*- coding: utf-8 -*-
 """弹幕接口: /api/danmaku/*"""
 import json, traceback, time, threading, struct, random, string
-import re
-
 import requests as _requests
 import websocket as _ws
 import urllib3
@@ -76,20 +74,15 @@ def _perf_test_single(endpoint, concurrency=5, total_req=20):
         if isinstance(h, dict):
             headers = h
     body = endpoint.get('body') or None
+
     if body:
-        if isinstance(body, dict):
-            body_str = regular(json.dumps(body))
-        else:
-            body_str = regular(str(body))
+        body_str = regular(str(body))
         try:
             body_json = json.loads(body_str)
-            _has_body_json = True
+            rsep = _requests.request(method, url, headers=headers, json=body_json, timeout=10)
         except json.JSONDecodeError:
-            _has_body_json = False
-    else:
-        body_str = None
-        body_json = None
-        _has_body_json = False
+            rsep = _requests.request(method, url, headers=headers, data=body_str, timeout=10)
+
 
     latencies = []
     errors = 0
@@ -106,12 +99,8 @@ def _perf_test_single(endpoint, concurrency=5, total_req=20):
             if i >= total_req:
                 break
             t0 = time.time()
-            print("DEBUG body:", repr(body_str))
             try:
-                resp = _requests.request(method, url, headers=headers,
-                                         json=body_json if _has_body_json else None,
-                                         data=body_str if not _has_body_json else None,
-                                         timeout=10)
+                resp = _requests.request(method, url, headers=headers, data=body, timeout=10)
                 ms = (time.time() - t0) * 1000
                 with lock:
                     latencies.append(ms)
@@ -197,16 +186,15 @@ def api_danmaku_create():
         method = (body.get("method") or "GET").strip().upper()
         headers = json.dumps(body.get("headers") or {}, ensure_ascii=False)
         req_body = body.get("body") or ""
-        keep_flag = int(body.get("keep_flag", 0))
 
         conn = get_db_conn()
         try:
             with conn.cursor() as cur:
                 cur.execute(
                     """INSERT INTO danmaku_endpoints
-                        (project_category, project_name, endpoint_name, endpoint_url, method, headers, body, keep_flag)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
-                    (category, project_name, endpoint_name, endpoint_url, method, headers, req_body, keep_flag)
+                        (project_category, project_name, endpoint_name, endpoint_url, method, headers, body)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+                    (category, project_name, endpoint_name, endpoint_url, method, headers, req_body)
                 )
                 conn.commit()
                 new_id = cur.lastrowid
@@ -225,7 +213,7 @@ def api_danmaku_update(pid):
         body = request.get_json(force=True) or {}
         fields = []
         values = []
-        for f in ["project_category", "project_name", "endpoint_name", "endpoint_url", "method", "body", "keep_flag"]:
+        for f in ["project_category", "project_name", "endpoint_name", "endpoint_url", "method", "body"]:
             if f in body:
                 fields.append(f"{f}=%s")
                 values.append(body[f])
@@ -375,7 +363,6 @@ def api_danmaku_ws_create():
         method = (body.get("method") or "POST").strip().upper()
         headers = json.dumps(body.get("headers") or {}, ensure_ascii=False)
         req_body = body.get("body") or ""
-        keep_flag = int(body.get("keep_flag", 0))
 
         table = _WS_PROJECTS_TABLE
         conn = get_db_conn()
@@ -383,9 +370,9 @@ def api_danmaku_ws_create():
             with conn.cursor() as cur:
                 cur.execute(
                     f"""INSERT INTO {table}
-                        (project_category, project_name, endpoint_name, endpoint_url, method, headers, body, keep_flag)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
-                    (category, project_name, endpoint_name, endpoint_url, method, headers, req_body, keep_flag)
+                        (project_category, project_name, endpoint_name, endpoint_url, method, headers, body)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+                    (category, project_name, endpoint_name, endpoint_url, method, headers, req_body)
                 )
                 conn.commit()
                 new_id = cur.lastrowid
@@ -405,7 +392,7 @@ def api_danmaku_ws_update(pid):
         body = request.get_json(force=True) or {}
         fields = []
         values = []
-        for f in ["project_category", "project_name", "endpoint_name", "endpoint_url", "method", "body", "keep_flag"]:
+        for f in ["project_category", "project_name", "endpoint_name", "endpoint_url", "method", "body"]:
             if f in body:
                 fields.append(f"{f}=%s")
                 values.append(body[f])
@@ -707,111 +694,4 @@ def api_danmaku_ws_perf():
         })
     except Exception as e:
         traceback.print_exc()
-        return jsonify({"success": False, "error": str(e)}), 500
-
-
-# ─── AI 用例生成 ────────────────────────────────────────────
-@danmaku_bp.route("/api/danmaku/ai-generate", methods=["POST"])
-def api_danmaku_ai_generate():
-    """选中弹幕接口 → AI 生成测试用例"""
-    import sys, os, traceback as tb
-    try:
-        body = request.get_json(force=True) or {}
-        ids = body.get("ids", [])
-        if not ids or not isinstance(ids, list):
-            return jsonify({"success": False, "error": "请提供接口 ID 列表"}), 400
-
-        # 取每个 id 的端点详情
-        conn = get_db_conn()
-        try:
-            with conn.cursor() as cur:
-                placeholders = ",".join(["%s"] * len(ids))
-                cur.execute(
-                    f"SELECT id, endpoint_name, endpoint_url, method, headers, body FROM danmaku_endpoints WHERE id IN ({placeholders}) ORDER BY id",
-                    ids)
-                rows = cur.fetchall()
-        finally:
-            conn.close()
-
-        if not rows:
-            return jsonify({"success": False, "error": "未找到匹配的接口"}), 404
-
-        # 延迟导入 AI 生成模块
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-        case_type = body.get("case_type", "")
-        if case_type == "stress":
-            from utils.read_files_tools.stress_test_case_generator import generate_stress_case as _gen_func
-        elif case_type == "smoke":
-            from utils.read_files_tools.smoke_test_case_generator import generate_smoke_case as _gen_func
-        else:
-            from utils.read_files_tools.get_yaml_case import generate as _gen_func
-
-        results = []
-        for row in rows:
-            eid = row["id"]
-            ename = row["endpoint_name"] or "unnamed"
-            try:
-                # 构造文本描述给 AI
-                method = (row.get("method") or "GET").upper()
-                url = row.get("endpoint_url") or ""
-                headers_str = row.get("headers") or "{}"
-                body_str = row.get("body") or ""
-
-                desc = f"接口名称: {ename}\n请求方法: {method}\nURL: {url}"
-                if headers_str and headers_str.strip() not in ("{}", ""):
-                    desc += f"\nHeaders: {headers_str}"
-                if body_str and body_str.strip() not in ("{}", ""):
-                    desc += f"\nBody: {body_str}"
-
-                gen_result = _gen_func("text", desc)
-                # 用例存入数据库test_yaml_cases中
-                if gen_result.get("success") and gen_result.get("yaml_body"):
-                    safe_name = ename or "auto_yaml"
-                    safe_name = re.sub(r'[\\/:*?"<>|]', '', safe_name)
-                    safe_name = safe_name[:30]
-                    try:
-                        conn2 = get_db_conn()
-                        try:
-                            with conn2.cursor() as cur2:
-                                cur2.execute(
-                                    """INSERT INTO test_yaml_cases
-                                        (filename, yaml_body, input_type, input_content, summary, model, exec_status)
-                                        VALUES (%s, %s, %s, %s, %s, %s, 'generated')""",
-                                    (safe_name,
-                                     gen_result["yaml_body"],
-                                     "text",
-                                     desc[:10000],
-                                     gen_result.get("summary",""),
-                                     gen_result.get("model",""))
-                                )
-                                # 返回自增ID，前端可以用
-                                gen_result["db_id"] = cur2.lastrowid
-                            conn2.commit()
-                        finally:
-                            conn2.close()
-                    except Exception as e:
-                        print(f"[WARN] 写入 test_yaml_cases 失败 ({ename}): {e}")
-                        gen_result["db_save_error"] = str(e)
-                results.append({
-                    "id": eid,
-                    "endpoint_name": ename,
-                    "success": gen_result.get("success", False),
-                    "yaml_body": gen_result.get("yaml_body") or gen_result.get("yaml", ""),
-                    "summary": gen_result.get("summary", ""),
-                    "error": gen_result.get("error") if not gen_result.get("success") else None,
-                })
-            except Exception as e2:
-                tb.print_exc()
-                results.append({
-                    "id": eid,
-                    "endpoint_name": ename,
-                    "success": False,
-                    "yaml_body": "",
-                    "error": str(e2),
-                })
-
-        ok_count = sum(1 for r in results if r["success"])
-        return jsonify({"success": ok_count > 0, "results": results, "total": len(results), "ok": ok_count})
-    except Exception as e:
-        tb.print_exc()
         return jsonify({"success": False, "error": str(e)}), 500

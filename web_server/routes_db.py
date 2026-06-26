@@ -42,7 +42,6 @@ def api_db_records():
                         tc.exec_status, tc.input_type,
                         COALESCE(tc.input_content, '') as input_content,
                         COALESCE(tc.yaml_body, '') as yaml_body,
-                        COALESCE(tc.keep_flag, 0) as keep_flag,
                         DATE_FORMAT(tc.created_at, '%%Y-%%m-%%d %%H:%%i:%%S') as created_at,
                         tr.id as report_id, tr.total, tr.passed, tr.failed,
                         tr.skipped, tr.broken, tr.pass_rate, tr.duration,
@@ -79,25 +78,3 @@ def api_db_records():
             })
         except Exception as e2:
             return jsonify({"success": False, "error": str(e2)}), 500
-
-
-@db_bp.route("/api/db/records/<int:rid>/keep", methods=["PATCH"])
-def api_db_record_keep(rid):
-    """切换运行记录的 keep_flag"""
-    try:
-        body = request.get_json(force=True) or {}
-        keep = int(body.get("keep_flag", 0))
-        conn = get_db_conn()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "UPDATE test_yaml_cases SET keep_flag=%s WHERE id=%s",
-                    (keep, rid)
-                )
-                conn.commit()
-            return jsonify({"success": True, "id": rid, "keep_flag": keep})
-        finally:
-            conn.close()
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({"success": False, "error": str(e)}), 500

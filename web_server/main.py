@@ -28,9 +28,6 @@ if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
 from flask import Flask
-import threading, time, datetime, logging
-
-log = logging.getLogger(__name__)
 
 # ── 注册 Blueprint ──
 from web_server.routes_generate import gen_bp
@@ -40,19 +37,11 @@ from web_server.routes_db import db_bp
 from web_server.routes_danmaku import danmaku_bp
 from web_server.routes_static import static_bp
 from web_server.routes_wsperf import wsperf_bp
-from web_server.routes_protobuf import proto_bp
 
 
 def create_app():
     """工厂函数：创建并配置 Flask 应用"""
-    # 项目根目录下的 html 文件夹路径（存放前端静态资源）
-    html_dir = os.path.join(_project_root, "html")
-    app = Flask(
-        __name__,
-        template_folder=html_dir,       # 模板目录（原有配置）
-        static_folder=html_dir,        # 静态文件目录指向 html 文件夹
-        static_url_path=""             # 静态文件URL路径为空，使 /css/main.css 直接映射到 html/css/main.css
-    )
+    app = Flask(__name__, template_folder=os.path.join(_project_root, "html"))
     app.register_blueprint(gen_bp)
     app.register_blueprint(exec_bp)
     app.register_blueprint(ai_assert_bp)
@@ -60,7 +49,6 @@ def create_app():
     app.register_blueprint(danmaku_bp)
     app.register_blueprint(static_bp)
     app.register_blueprint(wsperf_bp)
-    app.register_blueprint(proto_bp)
     return app
 
 
@@ -109,49 +97,4 @@ if __name__ == "__main__":
 """)
 
     app = create_app()
-
-    # ── 启动 keep_flag 自动清理守护线程 ──
-    def _db_cleanup_daemon():
-        """每天凌晨 1:00 清理 keep_flag=0 且创建超过 3 天的记录"""
-        from web_server.db import get_db_conn
-        SQL = {
-            'danmaku_endpoints':
-                "DELETE FROM danmaku_endpoints WHERE keep_flag=0 AND created_at < NOW() - INTERVAL 3 DAY",
-            'danmaku_ws_projects':
-                "DELETE FROM danmaku_ws_projects WHERE keep_flag=0 AND created_at < NOW() - INTERVAL 3 DAY",
-            'test_yaml_cases':
-                "DELETE FROM test_yaml_cases WHERE keep_flag=0 AND created_at < NOW() - INTERVAL 3 DAY",
-        }
-        while True:
-            try:
-                now = datetime.datetime.now()
-                # 计算下一个凌晨 1:00
-                target = now.replace(hour=1, minute=0, second=0, microsecond=0)
-                if now >= target:
-                    target += datetime.timedelta(days=1)
-                sleep_sec = (target - now).total_seconds()
-                time.sleep(sleep_sec)
-
-                # 执行清理
-                conn = get_db_conn()
-                try:
-                    with conn.cursor() as cur:
-                        for tbl, sql in SQL.items():
-                            cur.execute(sql)
-                            rows = cur.rowcount or 0
-                            if rows:
-                                print(f"[cleanup] {tbl} 清理 {rows} 条过期记录")
-                        conn.commit()
-                except Exception as e:
-                    print(f"[cleanup] 数据库清理失败: {e}")
-                finally:
-                    conn.close()
-            except Exception as e:
-                print(f"[cleanup] 守护线程异常: {e}")
-                time.sleep(600)
-
-    _cleanup_thread = threading.Thread(target=_db_cleanup_daemon, daemon=True, name="db-cleanup")
-    _cleanup_thread.start()
-    print("  🧹 keep_flag 自动清理已启动（每天 01:00 清理 >3 天旧记录）\n")
-
     app.run(host="0.0.0.0", port=5000, debug=False, use_reloader=False)

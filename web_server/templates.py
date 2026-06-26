@@ -8,10 +8,8 @@ with open(_TEMPLATE_PATH, "r", encoding="utf-8") as _f:
     CONFTEST_CODE = _f.read()
 
 
-def make_test_code(case_ids, common, yaml_stem, file_name, extra_tags=None):
-    """生成 pytest 测试文件代码
-    extra_tags: 额外 Allure 标签列表，如 ['smoke', 'stress']
-    """
+def make_test_code(case_ids, common, yaml_stem, file_name):
+    """生成 pytest 测试文件代码"""
     from datetime import datetime
     now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     class_title = "".join(w.capitalize() for w in yaml_stem.split("_")) if yaml_stem else "AutoCase"
@@ -19,12 +17,6 @@ def make_test_code(case_ids, common, yaml_stem, file_name, extra_tags=None):
     epic = common.get("allureEpic", "自动生成")
     feature = common.get("allureFeature", "自动生成")
     story = common.get("allureStory", "自动生成")
-
-    # 构建额外 Allure 装饰器（smoke / stress 标签）
-    extra_decorators = ""
-    if extra_tags:
-        extra_decorators = "\n".join(f'@allure.tag("{tag}")' for tag in extra_tags) + "\n"
-
     return f'''#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 # @Time   : {now_str}
@@ -46,7 +38,7 @@ re_data = regular(str(TestData))
 
 @allure.epic("{epic}")
 @allure.feature("{feature}")
-{extra_decorators}class Test{class_title}:
+class Test{class_title}:
 
     @allure.story("{story}")
     @pytest.mark.parametrize('in_data', eval(re_data), ids=[i['detail'] for i in TestData])

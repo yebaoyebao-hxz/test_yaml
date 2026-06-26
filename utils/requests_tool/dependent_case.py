@@ -1,19 +1,7 @@
 import ast
 import json
-from typing import Text, Dict, Union, List, Any
+from typing import Text, Dict, Union, List
 import jsonpath as _jsonpath
-
-
-def _safe_loads(data: Any, fallback=None) -> Any:
-    """安全 json.loads：空响应/非 JSON 返回 fallback（默认 {}），避免 json.loads('') 崩溃"""
-    if fallback is None:
-        fallback = {}
-    if not data or not isinstance(data, str) or not data.strip():
-        return fallback
-    try:
-        return json.loads(data)
-    except json.JSONDecodeError:
-        return fallback
 
 
 def _jp(data, expr):
@@ -215,7 +203,7 @@ class DependentCase:
                                 # 判断依赖数据类型, 依赖 response 中的数据
                                 if i.dependent_type == DependentType.RESPONSE.value:
                                     self.dependent_handler(
-                                        data=_safe_loads(res.response_data),
+                                        data=json.loads(res.response_data),
                                         _jsonpath=_jsonpath,
                                         set_value=_set_value,
                                         replace_key=_replace_key,
