@@ -1,22 +1,26 @@
 <div class="records-wrap">
   <div class="records-toolbar">
-    <input type="text" placeholder="搜索记录...">
-    <div class="count">共 0 条记录</div>
+    <span style="font-weight:600;">🗄️ 运行记录</span>
+    <input id="records-search" placeholder="搜索文件名或摘要..." oninput="filterRecords()">
+    <span class="count" id="records-count"></span>
+    <button class="btn btn-outline" style="padding:4px 10px;font-size:12px;" onclick="loadRecords()">🔄 刷新</button>
   </div>
-  <table class="records-table">
-    <thead>
-      <tr>
-        <th>文件名</th>
-        <th>执行状态</th>
-        <th>执行时间</th>
-        <th>摘要</th>
-        <th>操作</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr class="records-empty">
-        <td colspan="5">暂无运行记录</td>
-      </tr>
-    </tbody>
-  </table>
+  <div id="records-table-wrap">
+    <div class="records-empty" id="records-empty">加载中...</div>
+    <table class="records-table" id="records-table" style="display:none;">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>文件名</th>
+          <th>输入类型</th>
+          <th>摘要</th>
+          <th>执行状态</th>
+          <th>标记</th>
+          <th>时间</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody id="records-tbody"></tbody>
+    </table>
+  </div>
 </div>

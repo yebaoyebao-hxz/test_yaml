@@ -1,121 +1,112 @@
 <div class="perf-wrap">
-  <div class="perf-config-card">
+  <!-- 配置区 -->
+  <div class="card perf-config-card">
+    <div class="card-header">⚙️ 压测配置</div>
     <div class="card-body">
+      <div class="perf-row">
+        <label>URL</label>
+        <input id="perf-url" placeholder="https://api.example.com/endpoint">
+      </div>
       <!-- 模式切换 -->
       <div class="mode-switch">
-        <button class="mode-btn active">HTTP</button>
-        <button class="mode-btn">WebSocket</button>
+        <button class="mode-btn active" data-mode="http" onclick="switchPerfMode('http')">🌐 HTTP</button>
+        <button class="mode-btn" data-mode="ws" onclick="switchPerfMode('ws')">🔌 长链接 WebSocket</button>
       </div>
-      <!-- HTTP专属配置 -->
       <div class="http-only">
         <div class="perf-row">
-          <label>请求URL</label>
-          <input type="text" placeholder="https://example.com/api">
-        </div>
-        <div class="perf-row">
-          <label>请求方法</label>
-          <select>
-            <option>GET</option>
-            <option>POST</option>
-            <option>PUT</option>
-            <option>DELETE</option>
+          <label>方法</label>
+          <select id="perf-method">
+            <option>GET</option><option>POST</option><option>PUT</option><option>DELETE</option><option>PATCH</option>
           </select>
         </div>
-        <div class="perf-row">
-          <label>请求头</label>
-          <div class="perf-header-list">
-            <div class="perf-header-item">
-              <input type="text" placeholder="Key">
-              <input type="text" placeholder="Value">
-              <button class="btn-remove">×</button>
-            </div>
+      </div>
+      <div class="http-only">
+        <div style="font-size:12px;color:#888;margin-top:2px;">Headers</div>
+        <div class="perf-header-list" id="perf-headers">
+          <div class="perf-header-item">
+            <input placeholder="Key" value="Content-Type">
+            <input placeholder="Value" value="application/json">
+            <button class="btn-remove" onclick="removePerfHeader(this)">×</button>
           </div>
         </div>
+        <button class="btn btn-outline" style="padding:4px 10px;font-size:12px;align-self:flex-start;" onclick="addPerfHeader()">+ 添加 Header</button>
+      </div>
+      <div>
+        <div style="font-size:12px;color:#888;" id="perf-body-label">Body（POST/PUT/PATCH 时使用）</div>
+        <textarea class="perf-body-input" id="perf-body" placeholder='{"key": "value"}'></textarea>
+      </div>
+      <!-- WebSocket 专属配置 -->
+      <div class="ws-only" id="ws-extra">
         <div class="perf-row">
-          <label>请求体</label>
-          <textarea class="perf-body-input" placeholder="JSON格式..."></textarea>
+          <label>连接超时</label>
+          <input id="ws-timeout" type="number" value="10" min="1" max="60" style="width:100%;padding:6px 10px;border:1px solid #d9d9d9;border-radius:6px;font-size:13px;">
+          <span style="font-size:12px;color:#888;white-space:nowrap;">秒</span>
         </div>
-      </div>
-      <!-- WebSocket专属配置（默认隐藏） -->
-      <div class="ws-only">
         <div class="perf-row">
-          <label>WS地址</label>
-          <input type="text" placeholder="ws://example.com/ws">
-        </div>
-      </div>
-      <!-- 压测参数 -->
-      <div class="perf-slider-row">
-        <label>并发数</label>
-        <div class="slider-wrap">
-          <input type="range" min="1" max="1000" value="100">
-          <span class="val">100</span>
+          <label>心跳间隔</label>
+          <input id="ws-ping-interval" type="number" value="0" min="0" max="60" style="width:100%;padding:6px 10px;border:1px solid #d9d9d9;border-radius:6px;font-size:13px;">
+          <span style="font-size:12px;color:#888;white-space:nowrap;">秒 (0=不发送)</span>
         </div>
       </div>
       <div class="perf-slider-row">
-        <label>总请求数</label>
+        <label id="perf-concurrency-label">并发数</label>
         <div class="slider-wrap">
-          <input type="range" min="100" max="10000" value="1000">
-          <span class="val">1000</span>
+          <input type="range" id="perf-concurrency" min="1" max="50" value="5" oninput="document.getElementById('perf-concurrency-val').textContent=this.value">
+          <span class="val" id="perf-concurrency-val">5</span>
         </div>
       </div>
-      <!-- 操作按钮 -->
+      <div class="perf-slider-row">
+        <label id="perf-total-label">总请求</label>
+        <div class="slider-wrap">
+          <input type="range" id="perf-total" min="10" max="500" value="50" step="10" oninput="document.getElementById('perf-total-val').textContent=this.value">
+          <span class="val" id="perf-total-val">50</span>
+        </div>
+      </div>
       <div class="perf-btn-row">
-        <button class="btn-perf-run">开始压测</button>
-        <button class="btn-perf-stop">停止压测</button>
+        <button class="btn-perf-run" id="perf-run-btn" onclick="doPerfTest()">
+          <span class="spinner" id="perf-spinner"></span>
+          <span id="perf-run-label">🚀 开始压测</span>
+        </button>
+        <button class="btn-perf-stop" id="perf-stop-btn" onclick="stopPerfTest()">⏹ 停止</button>
+      </div>
+      <div class="perf-progress" id="perf-progress" style="display:none;">
+        <div class="perf-progress-bar" id="perf-progress-bar"></div>
       </div>
     </div>
   </div>
 
-  <!-- 压测结果展示 -->
-  <div class="perf-result-card">
-    <div class="perf-metrics">
-      <div class="perf-metric-card ok">
-        <div class="label">成功率</div>
-        <div class="value">100</div>
-        <div class="unit">%</div>
+  <!-- 结果区 -->
+  <div class="card">
+    <div class="card-header">📊 实时指标 <span id="perf-status" style="font-size:12px;color:#888;margin-left:8px;"></span></div>
+    <div class="card-body">
+      <div class="perf-metrics" id="perf-metrics">
+        <div class="perf-metric-card"><div class="label" id="perf-metric-l1">总请求</div><div class="value" id="perf-total-req">-</div></div>
+        <div class="perf-metric-card ok"><div class="label" id="perf-metric-l2">成功</div><div class="value" id="perf-ok">-</div></div>
+        <div class="perf-metric-card err"><div class="label" id="perf-metric-l3">失败</div><div class="value" id="perf-err">-</div></div>
+        <div class="perf-metric-card"><div class="label" id="perf-metric-l4">TPS</div><div class="value" id="perf-tps">-<span class="unit" id="perf-tps-unit"> req/s</span></div></div>
       </div>
-      <div class="perf-metric-card">
-        <div class="label">平均响应时间</div>
-        <div class="value">25</div>
-        <div class="unit">ms</div>
-      </div>
-      <div class="perf-metric-card">
-        <div class="label">QPS</div>
-        <div class="value">400</div>
-        <div class="unit">req/s</div>
-      </div>
-      <div class="perf-metric-card">
-        <div class="label">总耗时</div>
-        <div class="value">2.5</div>
-        <div class="unit">s</div>
+      <!-- WebSocket 连接指标（默认隐藏） -->
+      <div class="perf-metrics" id="ws-conn-metrics" style="display:none;margin-top:10px;">
+        <div class="perf-metric-card"><div class="label">连接总数</div><div class="value" id="ws-conn-total">-</div></div>
+        <div class="perf-metric-card ok"><div class="label">连接成功</div><div class="value" id="ws-conn-ok">-</div></div>
+        <div class="perf-metric-card err"><div class="label">连接失败</div><div class="value" id="ws-conn-err">-</div></div>
+        <div class="perf-metric-card warn"><div class="label">平均连接耗时</div><div class="value" id="ws-conn-avg">-<span class="unit"> ms</span></div></div>
       </div>
     </div>
-    <!-- 延迟分布 -->
-    <table class="perf-latency-table">
-      <tr>
-        <td>最小值</td>
-        <td>10 ms</td>
-      </tr>
-      <tr>
-        <td>最大值</td>
-        <td>50 ms</td>
-      </tr>
-      <tr>
-        <td>P50</td>
-        <td>20 ms</td>
-      </tr>
-      <tr>
-        <td>P90</td>
-        <td>35 ms</td>
-      </tr>
-      <tr>
-        <td>P99</td>
-        <td>45 ms</td>
-      </tr>
-    </table>
-    <!-- 进度条 -->
-    <div class="perf-progress">
-      <div class="perf-progress-bar" style="width: 0%"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">⏱ 延迟分布 <span id="perf-latency-title-suffix" style="font-size:12px;color:#888;"></span></div>
+    <div class="card-body">
+      <table class="perf-latency-table">
+        <tr><td>平均</td><td id="perf-avg">- ms</td></tr>
+        <tr><td>P50</td><td id="perf-p50">- ms</td></tr>
+        <tr><td>P90</td><td id="perf-p90">- ms</td></tr>
+        <tr><td>P95</td><td id="perf-p95">- ms</td></tr>
+        <tr><td>P99</td><td id="perf-p99">- ms</td></tr>
+        <tr><td>最小</td><td id="perf-min">- ms</td></tr>
+        <tr><td>最大</td><td id="perf-max">- ms</td></tr>
+      </table>
     </div>
   </div>
 </div>

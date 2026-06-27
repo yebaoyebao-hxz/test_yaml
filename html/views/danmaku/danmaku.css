@@ -1,6 +1,25 @@
-.danmaku-wrap { max-width: 1400px; margin: 0 auto; padding: 16px 20px; display: grid; grid-template-columns: 360px 1fr; gap: 16px; }
-@media (max-width: 800px) { .danmaku-wrap { grid-template-columns: 1fr; } }
-.dm-cat-tabs { display: flex; flex-wrap: wrap; gap: 4px; padding: 8px 14px 0; }
-.dm-cat-btn { padding: 3px 12px; border: 1px solid #d9d9d9; border-radius: 12px; background: #fff; cursor: pointer; font-size: 12px; color: #666; transition: all .15s; }
-.dm-cat-btn:hover { border-color: #1a73e8; color: #1a73e8; }
-.dm-cat-btn.active { background: #1a73e8; color: #fff; border-color: #1a73e8; }
+/* ── 弹幕压测视图 ── */
+  .danmaku-wrap { max-width: 1400px; margin: 0 auto; padding: 16px 20px; display: grid; grid-template-columns: 360px 1fr; gap: 16px; }
+  @media (max-width: 800px) { .danmaku-wrap { grid-template-columns: 1fr; } }
+  .dm-cat-tabs { display: flex; flex-wrap: wrap; gap: 4px; padding: 8px 14px 0; }
+  .dm-cat-btn { padding: 3px 12px; border: 1px solid #d9d9d9; border-radius: 12px; background: #fff; cursor: pointer; font-size: 12px; color: #666; transition: all .15s; }
+  .dm-cat-btn:hover { border-color: #1a73e8; color: #1a73e8; }
+  .dm-cat-btn.active { background: #1a73e8; color: #fff; border-color: #1a73e8; }
+  .dm-project-list { flex: 1; overflow-y: auto; max-height: 60vh; padding: 8px 14px; }
+  .dm-project-card { background: #f8f9fa; border: 1px solid #eee; border-radius: 8px; padding: 10px 12px; margin-bottom: 6px; cursor: pointer; transition: all .15s; }
+  .dm-project-card:hover { border-color: #1a73e8; background: #f0f4ff; }
+  .dm-project-card .dm-pname { font-weight: 600; font-size: 14px; color: #333; }
+  .dm-project-card .dm-ename { font-size: 12px; color: #888; margin-top: 2px; }
+  .dm-project-card .dm-url { font-size: 11px; color: #1a73e8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+  .dm-project-card .dm-meta { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
+  .dm-project-card .dm-method { font-size: 10px; padding: 1px 6px; border-radius: 3px; font-weight: 600; }
+  .dm-method-GET { background: #e6f7e6; color: #52c41a; }
+  .dm-method-POST { background: #fff3e0; color: #fa8c16; }
+  .dm-method-PUT { background: #e6f0ff; color: #1a73e8; }
+  .dm-method-DELETE { background: #fff1f0; color: #ff4d4f; }
+  .dm-method-PATCH { background: #f0e6ff; color: #9254de; }
+  .dm-project-card .dm-actions { display: flex; gap: 6px; margin-top: 6px; }
+  .dm-project-card .dm-actions button { padding: 2px 10px; border: 1px solid #d9d9d9; border-radius: 4px; background: #fff; cursor: pointer; font-size: 11px; }
+  .dm-project-card .dm-actions button:hover { border-color: #1a73e8; color: #1a73e8; }
+  .dm-empty { text-align: center; padding: 30px; color: #999; font-size: 13px; }
+  .dm-form-body { gap: 8px; }

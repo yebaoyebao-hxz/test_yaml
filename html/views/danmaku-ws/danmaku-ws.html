@@ -1,0 +1,101 @@
+<div class="danmaku-wrap">
+  <!-- 左栏：项目列表 -->
+  <div class="danmaku-left">
+    <div class="card" style="height:100%;">
+      <div class="card-header" style="display:flex;align-items:center;gap:8px;">
+        🔗 WS压测项目
+        <span style="font-size:11px;color:#888;margin-left:auto;" id="dmws-count"></span>
+      </div>
+      <div class="dm-cat-tabs" id="dmws-cat-tabs">
+        <button class="dm-cat-btn active" onclick="filterDmWsCategory('')">全部</button>
+      </div>
+      <div class="dm-project-list" id="dmws-project-list">
+        <div class="dm-empty">加载中...</div>
+      </div>
+      <div style="padding:10px;">
+        <button class="btn btn-primary" style="width:100%;" onclick="showDmWsForm()">+ 新增项目</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 右栏：表单 / 压测 -->
+  <div class="danmaku-right" id="dmws-right">
+    <div class="card" id="dmws-form-card">
+      <div class="card-header" id="dmws-form-title">📝 新增WS压测项目</div>
+      <div class="card-body dm-form-body">
+        <div class="perf-row"><label>分类</label>
+          <div style="display:flex;gap:6px;flex:1;">
+            <select id="dmws-category" style="flex:1;"><option>默认</option></select>
+            <input id="dmws-new-cat" placeholder="新分类..." style="width:100px;">
+          </div>
+        </div>
+        <div class="perf-row"><label>项目名</label><input id="dmws-project-name" placeholder="如：抖音弹幕登录"></div>
+        <div class="perf-row"><label>接口名</label><input id="dmws-endpoint-name" placeholder="如：anchor_register"></div>
+        <div class="perf-row"><label>URL</label><input id="dmws-url" placeholder="https://..."></div>
+        <!-- 平台预设按钮 -->
+        <div class="perf-row" style="gap:6px;">
+          <label style="min-width:56px;">预设</label>
+          <button class="btn btn-outline" style="padding:6px 14px;font-size:12px;" onclick="presetDmWsDy()">🎵 抖音</button>
+          <button class="btn btn-outline" style="padding:6px 14px;font-size:12px;" onclick="presetDmWsKs()">🎬 快手</button>
+        </div>
+        <div class="perf-row"><label>方法</label>
+          <select id="dmws-method"><option>GET</option><option selected>POST</option><option>PUT</option><option>DELETE</option><option>PATCH</option></select>
+        </div>
+        <div style="font-size:12px;color:#888;">Headers</div>
+        <div class="perf-header-list" id="dmws-headers">
+          <div class="perf-header-item">
+            <input placeholder="Key" value="Content-Type">
+            <input placeholder="Value" value="application/json; charset=utf-8">
+            <button class="btn-remove" onclick="removePerfHeader(this)">×</button>
+          </div>
+        </div>
+        <button class="btn btn-outline" style="padding:4px 10px;font-size:12px;align-self:flex-start;" onclick="addDmWsHeader()">+ 添加 Header</button>
+        <textarea class="perf-body-input" id="dmws-body" placeholder='{"roomId": 888888}'></textarea>
+        <input type="hidden" id="dmws-edit-id" value="">
+        <div class="perf-btn-row">
+          <button class="btn btn-primary" id="dmws-save-btn" onclick="saveDmWsProject()">💾 保存</button>
+          <button class="btn btn-outline" id="dmws-cancel-btn" style="display:none;" onclick="cancelDmWsEdit()">取消</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" id="dmws-perf-card" style="display:none;">
+      <div class="card-header">📊 长链接压测结果 — <span id="dmws-perf-name"></span></div>
+      <div class="card-body">
+        <div class="perf-slider-row"><label>并发连接数</label><div class="slider-wrap"><input type="range" id="dmws-perf-concurrency" min="1" max="100" value="5" oninput="document.getElementById('dmws-perf-concurrency-val').textContent=this.value"><span class="val" id="dmws-perf-concurrency-val">5</span></div></div>
+        <div class="perf-slider-row"><label>超时(秒)</label><div class="slider-wrap"><input type="range" id="dmws-perf-timeout" min="5" max="60" value="15" step="5" oninput="document.getElementById('dmws-perf-timeout-val').textContent=this.value"><span class="val" id="dmws-perf-timeout-val">15</span></div></div>
+        <div class="perf-btn-row">
+          <button class="btn-perf-run" id="dmws-perf-run-btn" onclick="runDmWsPerf()">🚀 开始长链接压测</button>
+          <button class="btn btn-outline" onclick="document.getElementById('dmws-perf-card').style.display='none';">关闭</button>
+        </div>
+        <div class="perf-progress" id="dmws-perf-progress" style="display:none;"><div class="perf-progress-bar" id="dmws-perf-progress-bar"></div></div>
+        <!-- 结果指标 -->
+        <div class="perf-metrics" style="margin-top:10px;" id="dmws-perf-metrics">
+          <div class="perf-metric-card"><div class="label">总连接</div><div class="value" id="dmws-total">-</div></div>
+          <div class="perf-metric-card ok"><div class="label">成功</div><div class="value" id="dmws-ok">-</div></div>
+          <div class="perf-metric-card err"><div class="label">失败</div><div class="value" id="dmws-failed">-</div></div>
+          <div class="perf-metric-card"><div class="label">TPS</div><div class="value" id="dmws-tps">-<span class="unit"> 连接/秒</span></div></div>
+        </div>
+        <!-- 总延迟 -->
+        <div style="font-size:12px;color:#888;margin-top:12px;font-weight:600;">📈 总延迟（登录→WS→认证→创建房间）</div>
+        <table class="perf-latency-table">
+          <tr><td>平均</td><td id="dmws-avg">- ms</td></tr>
+          <tr><td>P50</td><td id="dmws-p50">- ms</td></tr>
+          <tr><td>P90</td><td id="dmws-p90">- ms</td></tr>
+          <tr><td>P95</td><td id="dmws-p95">- ms</td></tr>
+          <tr><td>P99</td><td id="dmws-p99">- ms</td></tr>
+          <tr><td>最小</td><td id="dmws-min">- ms</td></tr>
+          <tr><td>最大</td><td id="dmws-max">- ms</td></tr>
+        </table>
+        <!-- 阶段延迟 -->
+        <div style="font-size:12px;color:#888;margin-top:12px;font-weight:600;">⚡ 各阶段延迟（仅成功连接）</div>
+        <table class="perf-latency-table">
+          <tr><td>登录</td><td id="dmws-login">- ms</td></tr>
+          <tr><td>WS连接</td><td id="dmws-ws-conn">- ms</td></tr>
+          <tr><td>认证</td><td id="dmws-auth">- ms</td></tr>
+          <tr><td>创建房间</td><td id="dmws-room">- ms</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>

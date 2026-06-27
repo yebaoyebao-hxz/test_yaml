@@ -1,14 +1,92 @@
 <div class="danmaku-wrap">
-  <div class="dm-config-card">
-    <!-- 分类标签 -->
-    <div class="dm-cat-tabs">
-      <button class="dm-cat-btn active">全部</button>
-      <button class="dm-cat-btn">普通弹幕</button>
-      <button class="dm-cat-btn">高级弹幕</button>
-      <button class="dm-cat-btn">互动弹幕</button>
+  <!-- 左栏：项目列表 -->
+  <div class="danmaku-left">
+    <div class="card" style="height:100%;">
+      <div class="card-header" style="display:flex;align-items:center;gap:8px;">
+        🎯 弹幕项目
+        <span style="font-size:11px;color:#888;margin-left:auto;" id="dm-count"></span>
+      </div>
+      <div class="dm-cat-tabs" id="dm-cat-tabs">
+        <button class="dm-cat-btn active" onclick="filterDmCategory('')">全部</button>
+      </div>
+      <div class="dm-project-list" id="dm-project-list">
+        <div class="dm-empty">加载中...</div>
+      </div>
+      <div style="padding:10px;">
+        <button class="btn btn-primary" style="width:100%;" onclick="showDmForm()">+ 新增项目</button>
+      </div>
     </div>
-    <!-- 其他配置（可根据实际补充） -->
   </div>
-  <!-- 弹幕压测展示区（可根据实际补充） -->
-  <div class="dm-preview-area"></div>
+
+  <!-- 右栏：表单 / 结果 -->
+  <div class="danmaku-right" id="dm-right">
+    <div class="card" id="dm-form-card">
+      <div class="card-header" id="dm-form-title">📝 新增弹幕项目</div>
+      <div class="card-body dm-form-body">
+        <div class="perf-row"><label>分类</label>
+          <div style="display:flex;gap:6px;flex:1;">
+            <select id="dm-category" style="flex:1;"><option>默认</option></select>
+            <input id="dm-new-cat" placeholder="新分类..." style="width:100px;">
+          </div>
+        </div>
+        <div class="perf-row"><label>项目名</label><input id="dm-project-name" placeholder="如：直播间弹幕发送"></div>
+        <div class="perf-row"><label>接口名</label><input id="dm-endpoint-name" placeholder="如：发送弹幕接口"></div>
+        <div class="perf-row"><label>URL</label><input id="dm-url" placeholder="https://api.example.com/dm/send"></div>
+        <div class="perf-row"><label>方法</label>
+          <select id="dm-method"><option>GET</option><option>POST</option><option>PUT</option><option>DELETE</option><option>PATCH</option></select>
+        </div>
+        <div style="font-size:12px;color:#888;">Headers</div>
+        <div class="perf-header-list" id="dm-headers">
+          <div class="perf-header-item">
+            <input placeholder="Key" value="Content-Type">
+            <input placeholder="Value" value="application/json">
+            <button class="btn-remove" onclick="removePerfHeader(this)">×</button>
+          </div>
+        </div>
+        <button class="btn btn-outline" style="padding:4px 10px;font-size:12px;align-self:flex-start;" onclick="addDmHeader()">+ 添加 Header</button>
+        <textarea class="perf-body-input" id="dm-body" placeholder='{"key": "value"}'></textarea>
+        <input type="hidden" id="dm-edit-id" value="">
+        <div class="perf-btn-row">
+          <button class="btn btn-primary" id="dm-save-btn" onclick="saveDmProject()">💾 保存</button>
+          <button class="btn btn-outline" id="dm-cancel-btn" style="display:none;" onclick="cancelDmEdit()">取消</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" id="dm-perf-card" style="display:none;">
+      <div class="card-header">📊 压测结果 — <span id="dm-perf-name"></span></div>
+      <div class="card-body">
+        <div class="perf-slider-row"><label>并发数</label><div class="slider-wrap"><input type="range" id="dm-perf-concurrency" min="1" max="30" value="5" oninput="document.getElementById('dm-perf-concurrency-val').textContent=this.value"><span class="val" id="dm-perf-concurrency-val">5</span></div></div>
+        <div class="perf-slider-row"><label>总请求</label><div class="slider-wrap"><input type="range" id="dm-perf-total" min="10" max="300" value="50" step="10" oninput="document.getElementById('dm-perf-total-val').textContent=this.value"><span class="val" id="dm-perf-total-val">50</span></div></div>
+        <div class="perf-btn-row">
+          <button class="btn-perf-run" id="dm-perf-run-btn" onclick="runDmPerf()">🚀 开始压测</button>
+          <button class="btn btn-outline" onclick="document.getElementById('dm-perf-card').style.display='none';">关闭</button>
+        </div>
+        <div class="perf-progress" id="dm-perf-progress" style="display:none;"><div class="perf-progress-bar" id="dm-perf-progress-bar"></div></div>
+        <div class="perf-metrics" style="margin-top:10px;" id="dm-perf-metrics">
+          <div class="perf-metric-card"><div class="label">总请求</div><div class="value" id="dm-total">-</div></div>
+          <div class="perf-metric-card ok"><div class="label">成功</div><div class="value" id="dm-ok">-</div></div>
+          <div class="perf-metric-card err"><div class="label">失败</div><div class="value" id="dm-err">-</div></div>
+          <div class="perf-metric-card"><div class="label">TPS</div><div class="value" id="dm-tps">-<span class="unit"> req/s</span></div></div>
+        </div>
+        <table class="perf-latency-table">
+          <tr><td>平均</td><td id="dm-avg">- ms</td></tr>
+          <tr><td>P50</td><td id="dm-p50">- ms</td></tr>
+          <tr><td>P90</td><td id="dm-p90">- ms</td></tr>
+          <tr><td>P95</td><td id="dm-p95">- ms</td></tr>
+          <tr><td>P99</td><td id="dm-p99">- ms</td></tr>
+          <tr><td>最小</td><td id="dm-min">- ms</td></tr>
+          <tr><td>最大</td><td id="dm-max">- ms</td></tr>
+        </table>
+        <!-- 运行日志面板 -->
+        <div style="margin-top:10px;" id="dm-error-log-box" hidden>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+            <strong style="color:#e74c3c;font-size:12px;">🐛 运行日志</strong>
+            <button onclick="document.getElementById('dm-error-log').innerHTML='';document.getElementById('dm-error-log-box').hidden=true;" style="background:none;border:none;color:#666;cursor:pointer;font-size:11px;">清空</button>
+          </div>
+          <div id="dm-error-log" style="max-height:260px;overflow:auto;background:#1e1e1e;color:#ccc;border-radius:4px;padding:8px;font:12px/1.6 Consolas,monospace;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>

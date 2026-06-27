@@ -125,17 +125,13 @@ def api_generate_smoke():
 
     try:
         body = request.get_json()
-        descriptions = body.get("description", [])
-        normalize_asserts = body.get("normalize_asserts", False)
-        if not descriptions:
-            return jsonify({"success": False, "error": "无接口描述"}), 400
-
         if not body or "descriptions" not in body:
             return jsonify({"success": False, "error": "缺少 descriptions 字段"}), 400
 
         descriptions = body.get("descriptions", [])
+        normalize_asserts = body.get("normalize_asserts", False)
         if not descriptions:
-            return jsonify({"success": False, "error": "未选择任何用例"}), 400
+            return jsonify({"success": False, "error": "无接口描述"}), 400
 
         results = []
         yaml_bodies = []
@@ -183,16 +179,13 @@ def api_generate_stress():
 
     try:
         body = request.get_json()
-        descriptions = body.get("descriptions", [])
-        normalize_asserts = body.get("normalize_asserts", False)
-        if not descriptions:
-            return jsonify({"success": False, "error": "无接口描述"}), 400
         if not body or "descriptions" not in body:
             return jsonify({"success": False, "error": "缺少 descriptions 字段"}), 400
 
         descriptions = body.get("descriptions", [])
+        normalize_asserts = body.get("normalize_asserts", False)
         if not descriptions:
-            return jsonify({"success": False, "error": "未选择任何用例"}), 400
+            return jsonify({"success": False, "error": "无接口描述"}), 400
 
         results = []
         yaml_bodies = []
