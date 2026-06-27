@@ -37,6 +37,7 @@ from web_server.routes_db import db_bp
 from web_server.routes_danmaku import danmaku_bp
 from web_server.routes_static import static_bp
 from web_server.routes_wsperf import wsperf_bp
+from web_server.routes_smart_case import smart_bp
 
 
 def create_app():
@@ -49,6 +50,7 @@ def create_app():
     app.register_blueprint(danmaku_bp)
     app.register_blueprint(static_bp)
     app.register_blueprint(wsperf_bp)
+    app.register_blueprint(smart_bp)
     return app
 
 
@@ -91,6 +93,7 @@ if __name__ == "__main__":
 ║           POST /api/execute                  ║
 ║           POST /api/ai_assert                ║
 ║           POST /api/perf/ws  (长链接压测)    ║
+║           POST /api/smart-case/generate-*    ║
 ║           GET  /api/db/records               ║
 ║           GET  /health                       ║
 ╚══════════════════════════════════════════════╝

@@ -1,0 +1,33 @@
+  /* ── 标准化断言开关 ── */
+  .normalize-toggle { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; }
+  .normalize-toggle input { display: none; }
+  .toggle-track {
+    width: 40px; height: 22px;
+    background: #ccc; border-radius: 11px;
+    position: relative; transition: background .3s;
+  }
+  .toggle-track::after {
+    content: ''; position: absolute; top: 2px; left: 2px;
+    width: 18px; height: 18px; border-radius: 50%;
+    background: #fff; transition: left .3s;
+    box-shadow: 0 1px 3px rgba(0,0,0,.2);
+  }
+  .normalize-toggle input:checked + .toggle-track { background: #fa8c16; }
+  .normalize-toggle input:checked + .toggle-track::after { left: 20px; }
+  .toggle-label { font-size: 13px; color: #666; white-space: nowrap; }
+
+  /* ── 智能用例生成视图 ── */
+  .smart-api-list-box {
+    margin-top: 12px; flex: 1; min-height: 0; overflow-y: auto;
+    border: 1px solid #eee; border-radius: 8px; padding: 8px;
+  }
+  .smart-api-item {
+    display: flex; align-items: flex-start; gap: 8px; padding: 6px 10px;
+    border: 1px solid #f0f0f0; border-radius: 6px; margin-bottom: 4px;
+    background: #fafafa; transition: all .15s; cursor: pointer;
+  }
+  .smart-api-item:hover { border-color: #1a73e8; background: #f0f4ff; }
+  .smart-api-item input[type=checkbox] { margin-top: 3px; flex-shrink: 0; accent-color: #1a73e8; width: 16px; height: 16px; }
+  .smart-api-preview { font-size: 12px; color: #555; line-height: 1.5; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .smart-toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .smart-toolbar .title { font-weight: 600; font-size: 13px; }

@@ -288,7 +288,7 @@ def _trim_stress_yaml_garbage(yaml_body: str) -> str:
     return "\n".join(result)
 
 # 公共生成入口
-def generate_stress_case(input_type: str, content: str) -> dict:
+def generate_stress_case(input_type: str, content: str, normalize_assert: bool = False) -> dict:
     """
     生成压测测试用例
     Args:
@@ -296,30 +296,26 @@ def generate_stress_case(input_type: str, content: str) -> dict:
         content: 输入内容（curl命令/文本描述）
     Returns:
         dict: 生成结果
+        :param input_type:
+        :param content:
+        :param normalize_assert:
     """
     if not content or (isinstance(content, str) and not content.strip()):
         return StressYamlCase(success=False, error="输入内容为空").to_dict()
 
     if input_type == "curl":
         parsed = _parse_curl(content)
-        rich_input = (
-            f"接口信息（从curl解析）：\n"
-            f"  完整URL: {parsed['url']}\n"
-            f"  Method:  {parsed['method']}\n"
-            f"  Headers: {parsed['headers']}\n"
-            f"  请求体:  {parsed['data']}\n\n"
-            f"原始curl命令：\n{content}"
-        )
+        rich_input = f"接口信息：{parsed}\n原始curl：{content}"
+        if normalize_assert:
+            rich_input += "\n开启标准化性能断言，统一TPS/RT/错误率模板"
         return _call_deepseek_stress(rich_input).to_dict()
-
     elif input_type == "text":
-        return _call_deepseek_stress(content).to_dict()
-
+        rich_input = content
+        if normalize_assert:
+            rich_input += "\n标准化压测断言，只保留核心性能指标，去除冗余校验"
+        return _call_deepseek_stress(rich_input).to_dict()
     else:
-        return StressYamlCase(
-            success=False,
-            error=f"不支持的 input_type: '{input_type}'，仅支持 curl/text",
-        ).to_dict()
+        return StressYamlCase(success=False, error=f"不支持类型{input_type}").to_dict()
 
 # 批量生成
 def generate_stress_batch(requests: List[dict]) -> List[dict]:
@@ -331,14 +327,14 @@ def generate_stress_batch(requests: List[dict]) -> List[dict]:
     return results
 
 # 测试示例
-if __name__ == "__main__":
-    # 测试curl输入
-    test_curl = """curl -X POST 'https://wwyd.vip.hnhxzkj.com/api/user/login' \
--H 'Content-Type: application/json' \
---data-raw '{"roomId":"12321"}'"""
-    result = generate_stress_case("curl", test_curl)
-    if result["success"]:
-        print("压测测试用例生成成功：")
-        print(result["yaml"])
-    else:
-        print(f"生成失败：{result['error']}")
+# if __name__ == "__main__":
+#     # 测试curl输入
+#     test_curl = """curl -X POST 'https://wwyd.vip.hnhxzkj.com/api/user/login' \
+# -H 'Content-Type: application/json' \
+# --data-raw '{"roomId":"12321"}'"""
+#     result = generate_stress_case("curl", test_curl)
+#     if result["success"]:
+#         print("压测测试用例生成成功：")
+#         print(result["yaml"])
+#     else:
+#         print(f"生成失败：{result['error']}")

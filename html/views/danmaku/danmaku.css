@@ -1,0 +1,6 @@
+.danmaku-wrap { max-width: 1400px; margin: 0 auto; padding: 16px 20px; display: grid; grid-template-columns: 360px 1fr; gap: 16px; }
+@media (max-width: 800px) { .danmaku-wrap { grid-template-columns: 1fr; } }
+.dm-cat-tabs { display: flex; flex-wrap: wrap; gap: 4px; padding: 8px 14px 0; }
+.dm-cat-btn { padding: 3px 12px; border: 1px solid #d9d9d9; border-radius: 12px; background: #fff; cursor: pointer; font-size: 12px; color: #666; transition: all .15s; }
+.dm-cat-btn:hover { border-color: #1a73e8; color: #1a73e8; }
+.dm-cat-btn.active { background: #1a73e8; color: #fff; border-color: #1a73e8; }

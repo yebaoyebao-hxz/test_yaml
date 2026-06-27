@@ -1,0 +1,56 @@
+.perf-wrap { max-width: 1400px; margin: 0 auto; padding: 16px 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 900px) { .perf-wrap { grid-template-columns: 1fr; } }
+.perf-config-card { grid-row: 1 / 3; }
+.perf-config-card .card-body { gap: 10px; overflow-y: auto; }
+.perf-row { display: flex; align-items: center; gap: 8px; }
+.perf-row label { font-size: 13px; color: #666; min-width: 56px; flex-shrink: 0; }
+.perf-row input, .perf-row select { flex: 1; padding: 6px 10px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 13px; }
+.perf-row input:focus, .perf-row select:focus { outline: none; border-color: #1a73e8; }
+.perf-header-list { display: flex; flex-direction: column; gap: 4px; max-height: 120px; overflow-y: auto; }
+.perf-header-item { display: flex; align-items: center; gap: 6px; }
+.perf-header-item input { flex: 1; padding: 4px 8px; border: 1px solid #d9d9d9; border-radius: 4px; font-size: 12px; }
+.perf-header-item input:focus { outline: none; border-color: #1a73e8; }
+.perf-header-item .btn-remove { padding: 3px 8px; border: 1px solid #d9d9d9; border-radius: 4px; background: #fff; cursor: pointer; font-size: 14px; color: #ff4d4f; line-height: 1; }
+.perf-header-item .btn-remove:hover { background: #fff1f0; }
+.perf-slider-row { display: flex; align-items: center; gap: 8px; }
+.perf-slider-row label { font-size: 13px; color: #666; min-width: 56px; flex-shrink: 0; }
+.perf-slider-row .slider-wrap { display: flex; align-items: center; gap: 10px; flex: 1; }
+.perf-slider-row input[type=range] { flex: 1; accent-color: #1a73e8; }
+.perf-slider-row .val { min-width: 40px; text-align: right; font-weight: 600; font-size: 14px; color: #1a73e8; }
+.perf-body-input { width: 100%; min-height: 80px; border: 1px solid #d9d9d9; border-radius: 6px; padding: 8px 10px; font-size: 13px; font-family: "SF Mono","Consolas",monospace; resize: vertical; }
+.perf-body-input:focus { outline: none; border-color: #1a73e8; }
+.perf-btn-row { display: flex; gap: 10px; align-items: center; margin-top: 4px; }
+.btn-perf-run { background: linear-gradient(135deg, #e8433c, #ff6b6b); color: #fff; border: none; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; padding: 12px 32px; flex: 1; transition: all .2s; }
+.btn-perf-run:hover { background: linear-gradient(135deg, #c0392b, #e8433c); }
+.btn-perf-run:disabled { background: #f5a3a3; cursor: not-allowed; }
+.btn-perf-stop { background: #fff; color: #e8433c; border: 1px solid #e8433c; border-radius: 8px; font-size: 14px; cursor: pointer; padding: 12px 24px; display: none; }
+.btn-perf-stop:hover { background: #fff1f0; }
+/* 性能测试模式切换 */
+.mode-switch {
+  display: flex; gap: 0; border-radius: 8px; overflow: hidden;
+  border: 1px solid #d9d9d9; margin-bottom: 2px;
+}
+.mode-btn {
+  flex: 1; padding: 6px 14px; border: none; background: #fafafa;
+  cursor: pointer; font-size: 13px; color: #666; transition: all .2s;
+}
+.mode-btn:first-child { border-right: 1px solid #d9d9d9; }
+.mode-btn.active { background: #1a1a2e; color: #fff; }
+.mode-btn:hover:not(.active) { background: #f0f0f0; }
+.ws-only { display: none; }
+.ws-only.show { display: flex; flex-direction: column; gap: 8px; }
+.http-only { display: flex; flex-direction: column; gap: 8px; }
+.perf-metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.perf-metric-card { background: #f8f9fa; border-radius: 8px; padding: 14px; text-align: center; }
+.perf-metric-card .label { font-size: 12px; color: #888; margin-bottom: 4px; }
+.perf-metric-card .value { font-size: 22px; font-weight: 700; color: #333; }
+.perf-metric-card .unit { font-size: 12px; color: #999; }
+.perf-metric-card.ok .value { color: #52c41a; }
+.perf-metric-card.err .value { color: #ff4d4f; }
+.perf-metric-card.warn .value { color: #fa8c16; }
+.perf-latency-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+.perf-latency-table td { padding: 6px 10px; border-bottom: 1px solid #f0f0f0; font-size: 13px; }
+.perf-latency-table td:first-child { color: #888; width: 60px; }
+.perf-latency-table td:last-child { text-align: right; font-weight: 500; font-family: "SF Mono","Consolas",monospace; }
+.perf-progress { width: 100%; height: 6px; background: #eee; border-radius: 3px; overflow: hidden; margin-top: 6px; }
+.perf-progress-bar { height: 100%; background: linear-gradient(90deg, #1a73e8, #52c41a); border-radius: 3px; transition: width .3s; width: 0%; }

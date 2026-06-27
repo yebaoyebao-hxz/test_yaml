@@ -275,7 +275,7 @@ def _trim_smoke_yaml_garbage(yaml_body: str) -> str:
     return "\n".join(result)
 
 # 公共生成入口
-def generate_smoke_case(input_type: str, content: str) -> dict:
+def generate_smoke_case(input_type: str, content: str, normalize_assert: bool = False) -> dict:
     """
     生成冒烟测试用例
     Args:
@@ -283,6 +283,9 @@ def generate_smoke_case(input_type: str, content: str) -> dict:
         content: 输入内容（curl命令/文本描述）
     Returns:
         dict: 生成结果（success/yaml/summary/error等）
+        :param content:
+        :param input_type:
+        :param normalize_assert:
     """
     if not content or (isinstance(content, str) and not content.strip()):
         return SmokeYamlCase(success=False, error="输入内容为空").to_dict()
@@ -290,26 +293,18 @@ def generate_smoke_case(input_type: str, content: str) -> dict:
     # 处理curl输入（先解析再传给AI）
     if input_type == "curl":
         parsed = _parse_curl(content)
-        rich_input = (
-            f"接口信息（从curl解析）：\n"
-            f"  完整URL: {parsed['url']}\n"
-            f"  Method:  {parsed['method']}\n"
-            f"  Headers: {parsed['headers']}\n"
-            f"  请求体:  {parsed['data']}\n\n"
-            f"原始curl命令：\n{content}"
-        )
+        rich_input = f"接口信息：{parsed}\n原始curl：{content}"
+        # 拼接标准化规则
+        if normalize_assert:
+            rich_input += "\n强制开启标准化断言：仅校验code字段，统一格式，精简多余断言"
         return _call_deepseek_smoke(rich_input).to_dict()
-
-    # 处理文本输入
     elif input_type == "text":
-        return _call_deepseek_smoke(content).to_dict()
-
-    # 不支持的输入类型
+        rich_input = content
+        if normalize_assert:
+            rich_input += "\n【强制标准化断言规则】仅保留code、msg、响应时间三条断言，移除所有自定义jsonpath断言，格式统一"
+        return _call_deepseek_smoke(rich_input).to_dict()
     else:
-        return SmokeYamlCase(
-            success=False,
-            error=f"不支持的 input_type: '{input_type}'，仅支持 curl/text",
-        ).to_dict()
+        return SmokeYamlCase(success=False, error=f"不支持类型{input_type}").to_dict()
 
 # 批量生成
 def generate_smoke_batch(requests: List[dict]) -> List[dict]:

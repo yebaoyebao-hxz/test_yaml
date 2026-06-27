@@ -39,7 +39,7 @@ def api_db_records():
                 cur.execute(
                     """SELECT
                         tc.id, tc.filename, tc.summary, tc.model,
-                        tc.exec_status, tc.input_type,
+                        tc.exec_status, tc.input_type, tc.keep_flag,
                         COALESCE(tc.input_content, '') as input_content,
                         COALESCE(tc.yaml_body, '') as yaml_body,
                         DATE_FORMAT(tc.created_at, '%%Y-%%m-%%d %%H:%%i:%%S') as created_at,
@@ -78,3 +78,31 @@ def api_db_records():
             })
         except Exception as e2:
             return jsonify({"success": False, "error": str(e2)}), 500
+
+
+@db_bp.route("/api/db/records/<int:record_id>/keep-flag", methods=["PUT"])
+def api_toggle_keep_flag(record_id):
+    """切换 keep_flag 状态 (0↔1)"""
+    try:
+        mysql_conn = get_db_conn()
+        try:
+            with mysql_conn.cursor() as cur:
+                cur.execute(
+                    "SELECT keep_flag FROM test_yaml_cases WHERE id = %s",
+                    (record_id,)
+                )
+                row = cur.fetchone()
+                if not row:
+                    return jsonify({"success": False, "error": "记录不存在"}), 404
+                new_flag = 0 if row["keep_flag"] == 1 else 1
+                cur.execute(
+                    "UPDATE test_yaml_cases SET keep_flag = %s WHERE id = %s",
+                    (new_flag, record_id)
+                )
+                mysql_conn.commit()
+            return jsonify({"success": True, "id": record_id, "keep_flag": new_flag})
+        finally:
+            mysql_conn.close()
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500

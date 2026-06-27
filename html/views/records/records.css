@@ -1,0 +1,39 @@
+.records-wrap { max-width: 1400px; margin: 0 auto; padding: 16px 20px; }
+.records-toolbar {
+  background: #fff; border-radius: 10px 10px 0 0; padding: 12px 16px;
+  display: flex; align-items: center; gap: 10px;
+  box-shadow: 0 1px 4px rgba(0,0,0,.08);
+}
+.records-toolbar input {
+  flex: 1; max-width: 300px; padding: 6px 10px;
+  border: 1px solid #d9d9d9; border-radius: 6px; font-size: 13px;
+}
+.records-toolbar input:focus { outline: none; border-color: #1a73e8; }
+.records-toolbar .count { color: #888; font-size: 13px; white-space: nowrap; }
+.records-table {
+  width: 100%; border-collapse: collapse; background: #fff;
+  border-radius: 0 0 10px 10px; overflow: hidden;
+  box-shadow: 0 1px 4px rgba(0,0,0,.08);
+}
+.records-table th {
+  background: #f5f5f5; color: #333; padding: 10px 14px;
+  text-align: left; font-size: 13px; font-weight: 600;
+  border-bottom: 2px solid #e8e8e8;
+}
+.records-table td {
+  padding: 8px 14px; border-bottom: 1px solid #f0f0f0;
+  font-size: 13px; vertical-align: top;
+}
+.records-table tr:hover { background: #fafafa; }
+.records-table .cell-wrap { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.records-table .cell-summary { max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.records-table .cell-actions { white-space: nowrap; }
+.records-table .cell-actions button {
+  padding: 3px 10px; border: 1px solid #d9d9d9; border-radius: 4px;
+  background: #fff; cursor: pointer; font-size: 12px; color: #666; margin-right: 4px;
+}
+.records-table .cell-actions button:hover { border-color: #1a73e8; color: #1a73e8; }
+.records-table .cell-actions button:disabled { border-color: #e0e0e0; color: #bbb; cursor: not-allowed; background: #f5f5f5; }
+.cell-filename { cursor: pointer; color: #1a73e8; font-weight: 500; }
+.cell-filename:hover { text-decoration: underline; }
+.records-empty { text-align: center; padding: 40px; color: #999; font-size: 14px; }

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """静态路由: /, /health, /report/<path>"""
-from flask import Blueprint, render_template, jsonify, send_from_directory
+from flask import Blueprint, render_template, jsonify, send_from_directory, make_response
 
 from web_server.config import REPORT_DIR
 
@@ -9,7 +9,11 @@ static_bp = Blueprint("static", __name__)
 
 @static_bp.route("/")
 def index():
-    return render_template('index.html')
+    resp = make_response(render_template('index.html'))
+    resp.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    resp.headers['Pragma'] = 'no-cache'
+    resp.headers['Expires'] = '0'
+    return resp
 
 
 @static_bp.route("/health")

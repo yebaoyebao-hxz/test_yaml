@@ -1,0 +1,121 @@
+<div class="perf-wrap">
+  <div class="perf-config-card">
+    <div class="card-body">
+      <!-- 模式切换 -->
+      <div class="mode-switch">
+        <button class="mode-btn active">HTTP</button>
+        <button class="mode-btn">WebSocket</button>
+      </div>
+      <!-- HTTP专属配置 -->
+      <div class="http-only">
+        <div class="perf-row">
+          <label>请求URL</label>
+          <input type="text" placeholder="https://example.com/api">
+        </div>
+        <div class="perf-row">
+          <label>请求方法</label>
+          <select>
+            <option>GET</option>
+            <option>POST</option>
+            <option>PUT</option>
+            <option>DELETE</option>
+          </select>
+        </div>
+        <div class="perf-row">
+          <label>请求头</label>
+          <div class="perf-header-list">
+            <div class="perf-header-item">
+              <input type="text" placeholder="Key">
+              <input type="text" placeholder="Value">
+              <button class="btn-remove">×</button>
+            </div>
+          </div>
+        </div>
+        <div class="perf-row">
+          <label>请求体</label>
+          <textarea class="perf-body-input" placeholder="JSON格式..."></textarea>
+        </div>
+      </div>
+      <!-- WebSocket专属配置（默认隐藏） -->
+      <div class="ws-only">
+        <div class="perf-row">
+          <label>WS地址</label>
+          <input type="text" placeholder="ws://example.com/ws">
+        </div>
+      </div>
+      <!-- 压测参数 -->
+      <div class="perf-slider-row">
+        <label>并发数</label>
+        <div class="slider-wrap">
+          <input type="range" min="1" max="1000" value="100">
+          <span class="val">100</span>
+        </div>
+      </div>
+      <div class="perf-slider-row">
+        <label>总请求数</label>
+        <div class="slider-wrap">
+          <input type="range" min="100" max="10000" value="1000">
+          <span class="val">1000</span>
+        </div>
+      </div>
+      <!-- 操作按钮 -->
+      <div class="perf-btn-row">
+        <button class="btn-perf-run">开始压测</button>
+        <button class="btn-perf-stop">停止压测</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 压测结果展示 -->
+  <div class="perf-result-card">
+    <div class="perf-metrics">
+      <div class="perf-metric-card ok">
+        <div class="label">成功率</div>
+        <div class="value">100</div>
+        <div class="unit">%</div>
+      </div>
+      <div class="perf-metric-card">
+        <div class="label">平均响应时间</div>
+        <div class="value">25</div>
+        <div class="unit">ms</div>
+      </div>
+      <div class="perf-metric-card">
+        <div class="label">QPS</div>
+        <div class="value">400</div>
+        <div class="unit">req/s</div>
+      </div>
+      <div class="perf-metric-card">
+        <div class="label">总耗时</div>
+        <div class="value">2.5</div>
+        <div class="unit">s</div>
+      </div>
+    </div>
+    <!-- 延迟分布 -->
+    <table class="perf-latency-table">
+      <tr>
+        <td>最小值</td>
+        <td>10 ms</td>
+      </tr>
+      <tr>
+        <td>最大值</td>
+        <td>50 ms</td>
+      </tr>
+      <tr>
+        <td>P50</td>
+        <td>20 ms</td>
+      </tr>
+      <tr>
+        <td>P90</td>
+        <td>35 ms</td>
+      </tr>
+      <tr>
+        <td>P99</td>
+        <td>45 ms</td>
+      </tr>
+    </table>
+    <!-- 进度条 -->
+    <div class="perf-progress">
+      <div class="perf-progress-bar" style="width: 0%"></div>
+    </div>
+  </div>
+</div>
