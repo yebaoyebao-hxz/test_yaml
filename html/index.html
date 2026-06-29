@@ -9,7 +9,6 @@
 <title>YAML 测试用例生成器</title>
 <link rel="stylesheet" href="./common/common.css">
 <link rel="stylesheet" href="./views/generate/generate.css">
-<link rel="stylesheet" href="./views/smart/smart.css">
 <link rel="stylesheet" href="./views/records/records.css">
 <link rel="stylesheet" href="./views/perf/perf.css">
 <link rel="stylesheet" href="./views/danmaku/danmaku.css">
@@ -20,10 +19,10 @@
 <div id="page-tabs-container"></div>
 
 <script>
-// Module Loader -- wait for header.html + page-tabs.html, then bind DOM events
+// Module Loader -- wait for header.html + page-tabs.html, then load views and bind DOM events
 let _headerReady = false, _tabsReady = false;
 function _onDomReady() {
-  if (_headerReady && _tabsReady) { initGenerateView(); }
+  // 头/导航加载完成,各视图初始化已下放到对应 view 的 fetch 回调中
 }
 
 fetch('./common/header.html').then(r=>r.text()).then(html=>{
@@ -33,12 +32,13 @@ fetch('./common/header.html').then(r=>r.text()).then(html=>{
 fetch('./common/page-tabs.html').then(r=>r.text()).then(html=>{
   document.getElementById('page-tabs-container').innerHTML = html;
   _tabsReady = true; _onDomReady();
-  const views = ['generate','smart','records','perf','danmaku','danmaku-ws'];
+  const views = ['generate','records','perf','danmaku','danmaku-ws'];
   views.forEach(v => {
     fetch('./views/'+v+'/'+v+'.html').then(r=>r.text()).then(h=>{
       const el = document.getElementById('view-'+v);
       if(el) { el.innerHTML = h; }
-      if (v === 'smart') initSmartView();
+      // 视图加载完成后才初始化（修复 tab 切换/图片上传不响应问题）
+      if (v === 'generate') { initGenerateView(); }
     }).catch(e=>console.error('Load view '+v+' failed:',e));
   });
 });
@@ -580,7 +580,6 @@ function switchPage(page) {
     b.classList.toggle('active', b.dataset.page === page);
   });
   document.getElementById('view-generate').classList.toggle('hidden', page !== 'generate');
-  document.getElementById('view-smart').classList.toggle('hidden', page !== 'smart');
   document.getElementById('view-records').classList.toggle('hidden', page !== 'records');
   document.getElementById('view-perf').classList.toggle('hidden', page !== 'perf');
   document.getElementById('view-danmaku').classList.toggle('hidden', page !== 'danmaku');
@@ -633,8 +632,8 @@ function filterRecords() {
     const execTag = execDone
       ? '<span class="tag-exec-ok">' + escapeHtml(r.exec_status) + '</span>'
       : '<span class="tag-exec-no">未执行</span>';
-    const reExecDisabled = !execDone || !r.yaml_body ? 'disabled' : '';
-    const reExecTitle = reExecDisabled ? 'title="尚未执行或无YAML内容"' : 'title="重新执行此用例"';
+    const reExecDisabled = !r.yaml_body ? 'disabled' : '';
+    const reExecTitle = reExecDisabled ? 'title="无YAML内容,无法执行"' : (execDone ? 'title="重新执行此用例"' : 'title="执行此用例"');
     const summary = (r.summary || '').substring(0, 50);
     const kept = r.keep_flag === 1 || r.keep_flag === '1' || r.keep_flag === true;
     const keepChecked = kept ? 'checked' : '';
@@ -646,7 +645,7 @@ function filterRecords() {
       '<td>' + escapeHtml(r.input_type||'-') + '</td>' +
       '<td><div class="cell-summary" title="' + escapeHtml(r.summary||'') + '">' + escapeHtml(summary||'-') + '</div></td>' +
       '<td>' + execTag + '</td>' +
-      '<td><label class="keep-toggle" title="标记保留/取消保留" onclick="event.stopPropagation();toggleKeepFlag(' + r.id + ', this)">' +
+      '<td><label class="keep-toggle" title="切换保存状态" onclick="event.stopPropagation();toggleKeepFlag(' + r.id + ', this)">' +
         '<input type="checkbox" ' + keepChecked + '><span class="keep-track"></span></label></td>' +
       '<td style="font-size:12px;color:#888;white-space:nowrap;">' + (r.created_at||'-') + '</td>' +
       '<td class="cell-actions"><button ' + reExecDisabled + ' ' + reExecTitle + ' onclick="reExecute(' + r.id + ')">🔄 再次执行</button></td>' +
@@ -671,7 +670,7 @@ async function toggleKeepFlag(id, labelEl) {
       // 同步更新 allRecords
       const rec = allRecords.find(r => r.id === id);
       if (rec) rec.keep_flag = data.keep_flag;
-      showToast(data.keep_flag ? '已标记保留' : '已取消保留', 'ok');
+      showToast(data.keep_flag ? '已保存' : '已取消保存', 'ok');
     } else {
       cb.checked = wasChecked;
       showToast('操作失败: ' + (data.error || ''), 'err');
@@ -1519,6 +1518,276 @@ async function loadDanmakuWsProjects() {
   } catch (e) { showToast('加载WS项目异常: ' + e.message, 'err'); }
 }
 
+
+// ══════ 弹幕用例生成（Dashboard → 选接口 → AI 生成 YAML → 执行/AI断言） ══════
+let dmCgAll = [];
+let dmCgSelected = new Set();
+let dmCgMode = '';
+let dmCgYaml = '';
+let dmCgSummary = '';
+let dmCgNormalize = false;
+
+function parseDmCgHeaders(raw) {
+  if (!raw) return {};
+  try {
+    if (typeof raw === 'object') return raw;
+    return JSON.parse(raw);
+  } catch (_) {
+    const h = {};
+    String(raw).split(/[\n,]/).forEach(s => {
+      const p = s.trim(); if (!p) return;
+      const i = p.indexOf(':');
+      if (i > 0) h[p.slice(0, i).trim()] = p.slice(i + 1).trim();
+      else h[s.trim()] = '';
+    });
+    return h;
+  }
+}
+
+function dmCgRenderCat(containerId, cats) {
+  const el = document.getElementById(containerId);
+  if (!cats || cats.length <= 1) { el.innerHTML = ''; return; }
+  el.innerHTML = cats.map(c =>
+    `<button class="btn btn-sm btn-outline" style="padding:2px 10px;font-size:12px;" onclick="dmCgSetCat('${(c||'').replace(/'/g, "\\'")}')">${c||'未分类'}</button>`
+  ).join('');
+}
+
+async function showDmCaseGenModal() {
+  dmCgAll = []; dmCgSelected = new Set(); dmCgMode = ''; dmCgYaml = ''; dmCgSummary = ''; dmCgNormalize = false;
+  document.getElementById('dm-cg-normalize').checked = false;
+  document.getElementById('dm-cg-count').textContent = '已选 0 / 共 0';
+  document.getElementById('dm-cg-smoke-btn').disabled = true;
+  document.getElementById('dm-cg-list').innerHTML = '<div class="dm-empty">加载中...</div>';
+  document.getElementById('dm-cg-cats').innerHTML = '';
+  document.getElementById('dm-casegen-modal').classList.remove('hidden');
+  // 加载接口列表
+  try {
+    const r = await fetch('/api/danmaku/projects');
+    const d = await r.json();
+    dmCgAll = (d.items || []).filter(p => p.endpoint_url && p.endpoint_url.trim());
+    // 分类
+    const catSet = new Set();
+    dmCgAll.forEach(p => { const c = (p.endpoint_category || p.category || '').trim(); if (c) catSet.add(c); });
+    dmCgRenderCat('dm-cg-cats', [...catSet]);
+    dmCgRenderList();
+  } catch (e) { document.getElementById('dm-cg-list').innerHTML = '<div class="dm-empty" style="color:#ff4d4f;">加载失败: ' + e.message + '</div>'; }
+}
+
+function closeDmCaseGenModal() { document.getElementById('dm-casegen-modal').classList.add('hidden'); }
+
+function dmCgSetCat(cat) {
+  const filtered = cat ? dmCgAll.filter(p => (p.endpoint_category || p.category || '').trim() === cat) : dmCgAll;
+  dmCgRenderList(filtered);
+}
+
+function dmCgSelectAll(val) {
+  const list = document.getElementById('dm-cg-list');
+  const cbs = list.querySelectorAll('input[type="checkbox"]');
+  cbs.forEach(cb => { cb.checked = val; if (val) dmCgSelected.add(Number(cb.dataset.id)); else dmCgSelected.delete(Number(cb.dataset.id)); });
+  dmCgUpdateCount();
+}
+
+function dmCgToggle(id, checked) {
+  if (checked) dmCgSelected.add(id); else dmCgSelected.delete(id);
+  dmCgUpdateCount();
+}
+
+function dmCgUpdateCount() {
+  const total = dmCgAll.length;
+  const sel = dmCgSelected.size;
+  document.getElementById('dm-cg-count').textContent = '已选 ' + sel + ' / 共 ' + total;
+  document.getElementById('dm-cg-smoke-btn').disabled = sel < 2;
+}
+
+function dmCgRenderList(filtered) {
+  const items = filtered || dmCgAll;
+  const el = document.getElementById('dm-cg-list');
+  if (!items.length) { el.innerHTML = '<div class="dm-empty">暂无接口</div>'; return; }
+  el.innerHTML = items.map(p => {
+    const id = p.id;
+    const name = p.endpoint_name || p.project_name || '接口' + id;
+    const url = p.endpoint_url || p.url || '';
+    const method = (p.method || 'GET').substring(0, 6);
+    const category = p.endpoint_category || p.category || '';
+    const checked = dmCgSelected.has(id) ? ' checked' : '';
+    const cls = dmCgSelected.has(id) ? ' selected' : '';
+    return '<div class="dm-cg-item ' + cls + '" data-id="' + id + '" onclick="var cb=this.querySelector(' + "'input'" + ');cb.checked=' + String(!dmCgSelected.has(id)) + ';dmCgToggle(' + id + ',cb.checked);event.stopPropagation();"><input type="checkbox" data-id="' + id + '"' + checked + ' onclick="event.stopPropagation();" onchange="dmCgToggle(' + id + ',this.checked)"><div class="dm-cg-body"><div class="dm-cg-name">' + (name||'???') + '</div><div class="dm-cg-url">' + (method ? method + ' ' : '') + (url||'???') + '</div><div class="dm-cg-meta"><span>' + (category||'未分类') + '</span></div></div></div>';
+  }).join('');
+  dmCgUpdateCount();
+}
+
+async function doDmCaseGenerate(mode) {
+  dmCgMode = mode;
+  dmCgNormalize = document.getElementById('dm-cg-normalize').checked;
+  const btn = document.getElementById(mode === 'smoke' ? 'dm-cg-smoke-btn' : 'dm-cg-stress-btn');
+  btn.disabled = true;
+  btn.textContent = '⏳ 生成中...';
+  try {
+    const r = await fetch('/api/danmaku/case/generate', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: [...dmCgSelected], mode, normalize_assert: dmCgNormalize }),
+    });
+    const d = await r.json();
+    if (!d.success) { showToast('生成失败: ' + (d.error||'?'), 'err'); return; }
+    dmCgYaml = d.yaml || '';
+    dmCgSummary = d.summary || ('danmaku_' + mode);
+    document.getElementById('dm-cgyaml-text').value = dmCgYaml;
+    document.getElementById('dm-cgyaml-tag').textContent = d.count ? (' ' + d.count + ' 接口 · ' + mode.toUpperCase()) : (' ' + mode.toUpperCase());
+    document.getElementById('dm-cgyaml-status').textContent = '生成成功' + (d.model ? ' (' + d.model + ')' : '');
+    document.getElementById('dm-cgyaml-status').className = 'dm-cgyaml-status ok';
+    showDmCgYamlModal();
+    closeDmCaseGenModal();
+  } catch (e) { showToast('生成异常: ' + e.message, 'err'); }
+  finally {
+    btn.disabled = false;
+    btn.textContent = mode === 'smoke' ? '🌫️ 生成冒烟用例' : '🔥 生成压测用例';
+  }
+}
+
+function showDmCgYamlModal() { document.getElementById('dm-cgyaml-modal').classList.remove('hidden'); }
+function closeDmCgYamlModal() { document.getElementById('dm-cgyaml-modal').classList.add('hidden'); }
+
+function dmCgCopyYaml() {
+  const t = document.getElementById('dm-cgyaml-text');
+  t.select(); document.execCommand('copy');
+  showToast('✓ YAML 已复制到剪贴板', 'ok');
+}
+function dmCgDownloadYaml() {
+  const blob = new Blob([dmCgYaml], {type:'text/yaml;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = dmCgSummary.replace(/[^a-zA-Z0-9\u4e00-\u9fff_-]/g,'_') + '.yaml';
+  a.click(); URL.revokeObjectURL(a.href);
+}
+
+async function doDmCaseExecute() {
+  yamlBody = document.getElementById('dm-cgyaml-text').value || dmCgYaml;
+  if (!yamlBody) { showToast('YAML 为空', 'err'); return; }
+  dmCgYaml = yamlBody;
+  const exBtn = document.getElementById('dm-cg-exec-btn'); exBtn.disabled = true;
+  document.getElementById('dm-cg-exec-spinner').style.display = '';
+  document.getElementById('dm-cg-exec-text').textContent = '执行中...';
+  openDmCgRunModal();
+  const logEl = document.getElementById('dm-cgrun-log');
+  logEl.textContent = '正在保存 YAML 并启动 pytest...\n';
+  try {
+    const r = await fetch('/api/danmaku/case/run', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ yaml_body: yamlBody, summary: dmCgSummary, model: 'danmaku_' + dmCgMode }),
+    });
+    const d = await r.json();
+    if (d.success) {
+      logEl.textContent += (d.stdout || '') + '\n' + (d.stderr || '') + '\n';
+      logEl.textContent += '\n' + (d.pytest_rc === 0 ? '✅ 所有用例通过' : '❌ 有失败用例 (exit ' + d.pytest_rc + ')') + '\n';
+      if (d.report_url) {
+        logEl.textContent += 'Allure 报告: ' + d.report_url + '\n';
+        document.getElementById('dm-cgrun-iframe').src = d.report_url + '?t=' + Date.now();
+      }
+      setDmCgRunStatus(d.pytest_rc === 0 ? 'ok' : 'err');
+      updateDmCgRunStatusSpan(d.pytest_rc === 0 ? '✅ 通过' : '❌ 失败');
+    } else {
+      logEl.textContent += '执行失败: ' + (d.error || '未知错误') + '\n';
+      setDmCgRunStatus('err'); updateDmCgRunStatusSpan('❌ 失败');
+    }
+  } catch (e) {
+    logEl.textContent += '请求异常: ' + e.message + '\n';
+    setDmCgRunStatus('err'); updateDmCgRunStatusSpan('❌ 异常');
+  }
+  exBtn.disabled = false;
+  document.getElementById('dm-cg-exec-spinner').style.display = 'none';
+  document.getElementById('dm-cg-exec-text').textContent = '▶️ 执行用例';
+}
+
+async function doDmCaseAiAssert() {
+  const yamlBody = document.getElementById('dm-cgyaml-text').value || dmCgYaml;
+  if (!yamlBody) { showToast('YAML 为空', 'err'); return; }
+  dmCgYaml = yamlBody;
+  // 关闭 YAML 弹窗，拉起运行窗口
+  document.getElementById('dm-cgyaml-modal').classList.add('hidden');
+  openDmCgRunModal();
+  const logEl = document.getElementById('dm-cgrun-log');
+  const statusEl = document.getElementById('dm-cgyaml-status');
+  const aiBtn = document.getElementById('dm-cg-ai-btn');
+  aiBtn.disabled = true;
+  document.getElementById('dm-cg-ai-spinner').style.display = '';
+  document.getElementById('dm-cg-ai-text').textContent = '断言中...';
+  logEl.textContent = '>>> AI 断言任务启动\n';
+  logEl.textContent += '>>> 发送 YAML 到 /api/danmaku/case/ai-assert，等待 AI 响应...\n\n';
+  try {
+    const r = await fetch('/api/danmaku/case/ai-assert', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ yaml_body: yamlBody, normalize_asserts: dmCgNormalize }),
+    });
+    const d = await r.json();
+    if (d.success) {
+      dmCgYaml = d.yaml || yamlBody;
+      // 把新 YAML 写回隐藏的 textarea（用户重新打开 yaml 弹窗时能看到）
+      document.getElementById('dm-cgyaml-text').value = dmCgYaml;
+      if (statusEl) { statusEl.textContent = 'AI 断言生成成功'; statusEl.className = 'dm-cgyaml-status ok'; }
+      const lines = (d.log || '').split('\n');
+      logEl.textContent += '✓ AI 断言生成成功\n';
+      logEl.textContent += '  生成模式: ' + (d.mode || dmCgMode) + '\n';
+      logEl.textContent += '  解析行数: ' + (d.assertions_count || lines.length) + '\n';
+      logEl.textContent += '  耗时: ' + (d.elapsed || '?') + 's\n\n';
+      logEl.textContent += '--- AI 原始输出 ---\n' + (d.log || '(无)') + '\n';
+      logEl.textContent += '\n--- 新 YAML（已写入）---\n' + dmCgYaml + '\n';
+      logEl.textContent += '\n>>> 已自动关闭运行窗口。打开【关闭】旁的「YAML 预览」可查看/编辑新断言。\n';
+      setDmCgRunStatus('ok');
+      updateDmCgRunStatusSpan('✅ 断言完成');
+      // 重新拉起 YAML 弹窗（用户能立即看到效果）
+      setTimeout(() => {
+        document.getElementById('dm-cgyaml-modal').classList.remove('hidden');
+        document.getElementById('dm-cgrun-modal').classList.add('hidden');
+        // 标记: 让用户知道 YAML 已更新
+        const oldHtml = document.querySelector('.modal-overlay:not(.hidden) .modal-header');
+        showToast('✓ AI 断言已写入 YAML', 'ok');
+      }, 800);
+    } else {
+      const errMsg = d.error || '未知错误';
+      if (statusEl) { statusEl.textContent = '断言失败: ' + errMsg; statusEl.className = 'dm-cgyaml-status err'; }
+      logEl.textContent += '✗ AI 断言失败\n';
+      logEl.textContent += '  错误: ' + errMsg + '\n';
+      if (d.log) logEl.textContent += '\n--- AI 输出 ---\n' + d.log + '\n';
+      if (d.traceback) logEl.textContent += '\n--- 堆栈 ---\n' + d.traceback + '\n';
+      setDmCgRunStatus('err');
+      updateDmCgRunStatusSpan('❌ 失败');
+      showToast('AI 断言失败', 'err');
+    }
+  } catch (e) {
+    if (statusEl) { statusEl.textContent = '请求异常: ' + e.message; statusEl.className = 'dm-cgyaml-status err'; }
+    logEl.textContent += '✗ 请求异常: ' + e.message + '\n';
+    setDmCgRunStatus('err');
+    updateDmCgRunStatusSpan('❌ 异常');
+    showToast('请求异常: ' + e.message, 'err');
+  }
+  aiBtn.disabled = false;
+  document.getElementById('dm-cg-ai-spinner').style.display = 'none';
+  document.getElementById('dm-cg-ai-text').textContent = '🤖 AI 断言';
+}
+
+function openDmCgRunModal() {
+  document.getElementById('dm-cgrun-title').textContent = dmCgSummary || '';
+  document.getElementById('dm-cgrun-log').textContent = '等待开始...';
+  document.getElementById('dm-cgrun-iframe').src = 'about:blank';
+  document.getElementById('dm-cgrun-pane-log').classList.remove('hidden');
+  document.getElementById('dm-cgrun-pane-report').classList.add('hidden');
+  setDmCgRunStatus('running');
+  updateDmCgRunStatusSpan('▶️ 运行中');
+  document.getElementById('dm-cgrun-modal').classList.remove('hidden');
+  switchDmCgRunPane('log');
+}
+function closeDmCgRunModal() { document.getElementById('dm-cgrun-modal').classList.add('hidden'); }
+function setDmCgRunStatus(cls) {
+  const s = document.getElementById('dm-cgrun-status');
+  s.className = 'dm-cgrun-status ' + cls;
+}
+function updateDmCgRunStatusSpan(t) { document.getElementById('dm-cgrun-status').textContent = t; }
+function switchDmCgRunPane(pane) {
+  ['log','report'].forEach(p => document.getElementById('dm-cgrun-pane-' + p).classList.toggle('hidden', p !== pane));
+  document.querySelectorAll('.dm-cgrun-tab').forEach(t => t.classList.toggle('active', t.dataset.pane === pane));
+}
+
+
 function renderDmWsCategories() {
   const cats = [...new Set(dmWsAllItems.map(r => r.project_category || '默认'))];
   const container = document.getElementById('dmws-cat-tabs');
@@ -1916,284 +2185,6 @@ function copyConsole() {
 
 // ── 页面初始化 ──
 
-// ═══════ 智能用例生成 ═══════
-let smartApis = [];
-let smartNormalize = false;
-
-// ── 智能页签视图初始化（smart.html 加载完成后由 module loader 调用）──
-function initSmartView() {
-    const normalizeSwitch = document.getElementById('smart-normalize-switch');
-    if(normalizeSwitch){
-        normalizeSwitch.addEventListener('change', toggleSmartNormalize);
-    }
-}
-
-function toggleSmartNormalize() {
-  smartNormalize = document.getElementById('smart-normalize-switch').checked;
-  console.log("标准化开关状态：", smartNormalize);
-}
-// 清空输入
-function clearSmartInput() {
-  document.getElementById('smart-input').value = '';
-  document.getElementById('smart-api-list').style.display = 'none';
-  smartApis = [];
-  updateSmartGenButtons();
-}
-// 多行文本安全转义，分割过滤空API
-function parseSmartApis() {
-  const raw = document.getElementById('smart-input').value.trim();
-  if (!raw) {
-    _safeToast('请输入API描述', 'err');
-    return;
-  }
-  // 分割：---分隔 + 双空行分隔，同时过滤空行
-  let parts = raw.split(/\n\s*\n/).filter(p => p.trim() !== "");
-  if (parts.length <= 1) {
-    parts = raw.split(/^---+$/m).filter(p => p.trim() !== "");
-  }
-  smartApis = parts.map(item => item.trim()).filter(item => item.length > 0);
-  if (smartApis.length === 0) {
-    _safeToast('未解析到有效API', 'err');
-    return;
-  }
-  // 渲染勾选列表
-  const container = document.getElementById('smart-api-checks');
-  container.innerHTML = "";
-  smartApis.forEach((api, idx) => {
-    const preview = api.substring(0, 80);
-    const div = document.createElement("div");
-    div.className = "smart-api-item";
-    div.onclick = () => toggleSmartApi(idx);
-    div.innerHTML = `
-      <input type="checkbox" id="smart-api-${idx}" checked onchange="updateSmartGenButtons()">
-      <label for="smart-api-${idx}">#${idx+1} ${preview}${api.length>80?"...":""}</label>
-    `;
-    container.appendChild(div);
-  });
-  document.getElementById('smart-api-list').style.display = 'block';
-  document.getElementById('smart-api-count').textContent = smartApis.length;
-  updateSmartGenButtons();
-  _safeToast(`解析成功，共${smartApis.length}个接口`, "ok");
-}
-
-function toggleSmartApi(idx) {
-  const cb = document.getElementById('smart-api-' + idx);
-  if (cb) { cb.checked = !cb.checked; updateSmartGenButtons(); }
-}
-
-function smartSelectAll() {
-  smartApis.forEach((_, i) => {
-    const cb = document.getElementById('smart-api-' + i);
-    if (cb) cb.checked = true;
-  });
-  updateSmartGenButtons();
-}
-
-function smartDeselectAll() {
-  smartApis.forEach((_, i) => {
-    const cb = document.getElementById('smart-api-' + i);
-    if (cb) cb.checked = false;
-  });
-  updateSmartGenButtons();
-}
-
-// 获取已勾选接口
-function getSmartSelected() {
-  const selected = [];
-  smartApis.forEach((api, idx) => {
-    const cb = document.getElementById(`smart-api-${idx}`);
-    if(cb.checked) selected.push(api);
-  })
-  return selected;
-}
-// 生成按钮状态精准拦截（无勾选禁用）
-function updateSmartGenButtons() {
-  const selected = getSmartSelected();
-  const smokeBtn = document.getElementById('smart-smoke-btn');
-  const stressBtn = document.getElementById('smart-stress-btn');
-  // 冒烟要求至少2个接口，压测1个即可
-  smokeBtn.disabled = selected.length < 2;
-  stressBtn.disabled = selected.length < 1;
-}
-
-// 核心生成接口，增加try-catch、标准化参数、文本转义
-async function doSmartGenerate(mode) {
-  const selected = getSmartSelected();
-  if(selected.length === 0) {
-    _safeToast("请勾选至少一个接口", "err");
-    return;
-  }
-  // 前端文本安全转义：消除换行/特殊字符JSON报错
-  const safeDescriptions = selected.map(text => {
-    return text.replace(/\r/g, "").replace(/\n/g, "\\n");
-  })
-  const spinnerId = mode === 'smoke' ? 'smart-spinner' : 'smart-spinner';
-  const btn = mode === 'smoke' ? document.getElementById('smart-smoke-btn') : document.getElementById('smart-stress-btn');
-  const spinner = document.getElementById(spinnerId);
-  // 锁定按钮
-  btn.disabled = true;
-  spinner.style.display = "inline-block";
-  try {
-    const resp = await fetch(`/api/smart-case/generate-${mode}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        descriptions: safeDescriptions,
-        normalize_asserts: smartNormalize,
-      })
-    })
-    const data = await resp.json();
-    // 处理后端返回
-    window._smartResult = {
-      summary: data.summary || "",
-      yaml_body: data.yaml_body || "",
-      model: data.model || "",
-    }
-    currentResult = {...window._smartResult};
-    document.getElementById('smart-summary-box').textContent = data.summary || "";
-    document.getElementById('smart-model-tag').textContent = data.model || "";
-    const yamlBox = document.getElementById('smart-yaml-output');
-    const badge = document.getElementById('smart-status-badge');
-    if(data.success) {
-      yamlBox.value = data.yaml_body;
-      yamlBox.readOnly = false;
-      badge.innerHTML = `<span class="badge badge-success">成功 共${data.merged_count}组用例</span>`;
-      if(data.errors?.length >0) appendConsole(`<span class="c-warn">部分接口生成异常：${data.errors}</span>`);
-    } else {
-      yamlBox.value = data.error;
-      yamlBox.readOnly = true;
-      badge.innerHTML = `<span class="badge badge-error">生成失败</span>`;
-      appendConsole(`<span class="c-err">${data.error}</span>`);
-    }
-    _safeToast(data.success ? "生成完成" : "生成失败", data.success?"ok":"err");
-  } catch(err) {
-    appendConsole(`<span class="c-err">请求异常：${err.message}</span>`);
-    _safeToast("接口请求失败："+err.message, "err");
-  } finally {
-    btn.disabled = false;
-    spinner.style.display = "none";
-  }
-}
-
-async function doSmartExecute() {
-  const yb = document.getElementById('smart-yaml-output');
-  const yamlBody = yb.value.trim();
-  if (!yamlBody) {
-    _safeToast('请先生成 YAML 用例', 'err'); return;
-  }
-  const btn = document.getElementById('smart-execute-btn');
-  const spinner = document.getElementById('smart-exec-spinner');
-  btn.disabled = true;
-  spinner.style.display = 'inline-block';
-  setConsole('<span class="c-info">⏳ 正在保存 YAML → 生成测试文件 → 执行用例...</span>');
-
-  const sr = window._smartResult || {};
-  const summary = sr.summary || 'smart_case';
-  const filename = summary.replace(/[\\/:*?"<>|]/g, '').substring(0, 30) || 'smart_yaml_case';
-
-  try {
-    const resp = await fetch('/api/execute', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        yaml_body: yamlBody,
-        filename: filename,
-        input_type: 'text',
-        input_content: document.getElementById('smart-input').value.trim(),
-        summary: sr.summary || '',
-        model: sr.model || '',
-      }),
-    });
-    const data = await resp.json();
-
-    if (data.success) {
-      let html = '<span class="c-ok">✅ 执行完成 (返回码: ' + data.pytest_rc + ')</span>\n';
-      html += '<span class="c-dim">YAML: ' + escapeHtml(data.yaml_file || '') + ' | 测试: ' + escapeHtml(data.test_file || '') + '</span>\n';
-      if (data.report_url) html += '<a href="' + data.report_url + '" target="_blank" style="color:#1890ff;">📊 打开 Allure 报告 →</a>\n';
-      html += '\n<span style="color:#fff;font-weight:600;">── stdout ──</span>\n';
-      html += '<span class="c-dim">' + escapeHtml(data.stdout || '(空)') + '</span>\n';
-      if (data.stderr) {
-        html += '\n<span class="c-warn">── stderr ──</span>\n';
-        html += '<span class="c-warn">' + escapeHtml(data.stderr) + '</span>\n';
-      }
-      setConsole(html);
-      _safeToast('用例执行完成', 'ok');
-      loadDbCount();
-    } else {
-      let html = '<span class="c-err">❌ 执行失败</span>\n';
-      html += '<span class="c-err">' + escapeHtml(data.error || '未知错误') + '</span>\n';
-      if (data.stderr) html += '<span class="c-warn">' + escapeHtml(data.stderr) + '</span>\n';
-      setConsole(html);
-      _safeToast('执行失败: ' + (data.error || '未知错误'), 'err');
-    }
-  } catch (e) {
-    setConsole('<span class="c-err">❌ 网络错误: ' + escapeHtml(e.message) + '</span>');
-    _safeToast('网络错误', 'err');
-  } finally {
-    btn.disabled = false;
-    spinner.style.display = 'none';
-  }
-}
-
-async function doSmartAiAssert() {
-  const yamlBody = document.getElementById('smart-yaml-output').value.trim();
-  if (!yamlBody) {
-    _safeToast('请先生成 YAML 用例', 'err'); return;
-  }
-  const btn = document.getElementById('smart-ai-assert-btn');
-  const spinner = document.getElementById('smart-ai-spinner');
-  btn.disabled = true;
-  spinner.style.display = 'inline-block';
-  setConsole('<span class="c-info">⏳ AI 正在分析响应结果...</span>');
-
-  try {
-    const resp = await fetch('/api/ai_assert', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ yaml_body: yamlBody, normalize_asserts: smartNormalize }),
-    });
-    const data = await resp.json();
-
-    if (data.results) {
-      const ok = data.status === '通过';
-      const icon = ok ? '✅' : '❌';
-      let html = '<span class="' + (ok ? 'c-ok' : 'c-err') + '" style="font-size:14px;font-weight:600;">' + icon + ' AI断言结果: ' + escapeHtml(data.summary || '') + '</span>\n';
-      html += '<hr class="c-hr">\n';
-      data.results.forEach(r => {
-        const ok2 = r.status === '通过';
-        const i2 = ok2 ? '✅' : r.status === '错误' ? '⚠️' : '❌';
-        const cls = ok2 ? 'c-ok' : 'c-err';
-        html += '<span class="' + cls + '">' + i2 + ' <b>' + escapeHtml(r.case_id) + '</b> — HTTP ' + (r.response_code || '-') + '</span>\n';
-        html += '<span class="c-dim">  断言: ' + escapeHtml(r.assert_desc || '-') + '</span>\n';
-        html += '<span>  💡 ' + escapeHtml(r.reason) + '</span>\n';
-      });
-      setConsole(html);
-      _safeToast('AI断言完成: ' + (data.summary || ''), ok ? 'ok' : 'err');
-    } else {
-      setConsole('<span class="c-err">❌ ' + escapeHtml(data.error || 'AI断言失败') + '</span>');
-      _safeToast('AI断言失败', 'err');
-    }
-  } catch (e) {
-    setConsole('<span class="c-err">❌ 网络错误: ' + escapeHtml(e.message) + '</span>');
-    _safeToast('网络错误', 'err');
-  } finally {
-    btn.disabled = false;
-    spinner.style.display = 'none';
-  }
-}
-
-function smartCopyYaml() {
-   const text = document.getElementById('smart-yaml-output').value;
-  navigator.clipboard.writeText(text).then(()=>_safeToast("复制成功","ok"));
-}
-function smartDownloadYaml() {
-  const text = document.getElementById('smart-yaml-output').value;
-  const blob = new Blob([text], {type:"text/yaml"});
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = "smart_case.yaml";
-  a.click();
-}
 
 loadDbConfig();
 loadDbCount();

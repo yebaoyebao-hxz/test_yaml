@@ -13,7 +13,10 @@
         <div class="dm-empty">加载中...</div>
       </div>
       <div style="padding:10px;">
-        <button class="btn btn-primary" style="width:100%;" onclick="showDmForm()">+ 新增项目</button>
+<div style="padding:10px;display:flex;gap:6px;">
+        <button class="btn btn-primary" style="flex:1;" onclick="showDmForm()">+ 新增项目</button>
+        <button class="btn btn-outline" style="flex:1;" onclick="showDmCaseGenModal()">用例生成</button>
+      </div>
       </div>
     </div>
   </div>
@@ -86,6 +89,88 @@
           </div>
           <div id="dm-error-log" style="max-height:260px;overflow:auto;background:#1e1e1e;color:#ccc;border-radius:4px;padding:8px;font:12px/1.6 Consolas,monospace;"></div>
         </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 弹幕用例生成 Modal ===== -->
+<div class="modal-overlay hidden" id="dm-casegen-modal">
+  <div class="modal-box" style="max-width:780px;max-height:85vh;">
+    <div class="modal-header">
+      用例生成 - 选择接口
+      <button class="modal-close" onclick="closeDmCaseGenModal()">x</button>
+    </div>
+    <div class="modal-body" style="padding:0;">
+      <div class="dm-cg-cats" id="dm-cg-cats"></div>
+      <div class="dm-cg-toolbar">
+        <span id="dm-cg-count">已选 0 / 共 0</span>
+        <span style="flex:1"></span>
+        <button class="btn btn-outline" style="padding:3px 10px;font-size:12px;" onclick="dmCgSelectAll(true)">全选</button>
+        <button class="btn btn-outline" style="padding:3px 10px;font-size:12px;" onclick="dmCgSelectAll(false)">全不选</button>
+      </div>
+      <div class="dm-cg-list" id="dm-cg-list">
+        <div class="dm-empty">加载中...</div>
+      </div>
+      <div class="dm-cg-footer">
+        <label style="font-size:12px;color:#666;display:flex;align-items:center;gap:4px;margin-right:auto;">
+          <input type="checkbox" id="dm-cg-normalize"> 标准化断言
+        </label>
+        <button class="btn btn-outline" id="dm-cg-smoke-btn" onclick="doDmCaseGenerate('smoke')" disabled title="请至少选择 2 个接口">生成冒烟用例</button>
+        <button class="btn btn-primary" id="dm-cg-stress-btn" onclick="doDmCaseGenerate('stress')">生成压测用例</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- YAML 编辑 Modal -->
+<div class="modal-overlay hidden" id="dm-cgyaml-modal">
+  <div class="modal-box" style="max-width:920px;max-height:90vh;">
+    <div class="modal-header">
+      <span>YAML 预览 <span id="dm-cgyaml-tag" style="font-size:12px;color:#888;"></span></span>
+      <span style="flex:1"></span>
+      <button class="btn btn-outline" style="padding:3px 10px;font-size:12px;margin-right:8px;" onclick="dmCgCopyYaml()">复制</button>
+      <button class="btn btn-outline" style="padding:3px 10px;font-size:12px;margin-right:8px;" onclick="dmCgDownloadYaml()">下载</button>
+      <button class="modal-close" onclick="closeDmCgYamlModal()">x</button>
+    </div>
+    <div class="modal-body" style="padding:0;display:flex;flex-direction:column;max-height:calc(90vh - 100px);">
+      <textarea id="dm-cgyaml-text" class="dm-cgyaml-text" spellcheck="false" placeholder="YAML 加载中..."></textarea>
+      <div class="dm-cgyaml-status" id="dm-cgyaml-status"></div>
+      <div class="dm-cgyaml-footer">
+        <button class="btn btn-primary" id="dm-cg-exec-btn" onclick="doDmCaseExecute()">
+          <span class="spinner" id="dm-cg-exec-spinner" style="display:none;"></span>
+          <span id="dm-cg-exec-text">执行用例</span>
+        </button>
+        <button class="btn btn-outline" id="dm-cg-ai-btn" onclick="doDmCaseAiAssert()">
+          <span class="spinner" id="dm-cg-ai-spinner" style="display:none;"></span>
+          <span id="dm-cg-ai-text">AI 断言</span>
+        </button>
+        <span style="flex:1"></span>
+        <button class="btn btn-outline" onclick="closeDmCgYamlModal()">关闭</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 运行窗口 Modal -->
+<div class="modal-overlay hidden" id="dm-cgrun-modal">
+  <div class="modal-box" style="max-width:1000px;max-height:92vh;width:95vw;">
+    <div class="modal-header">
+      <span>运行窗口 <span id="dm-cgrun-title" style="font-size:12px;color:#888;"></span></span>
+      <span style="flex:1"></span>
+      <span id="dm-cgrun-status" class="dm-cgrun-status idle">空闲</span>
+      <button class="modal-close" onclick="closeDmCgRunModal()">x</button>
+    </div>
+    <div class="modal-body" style="padding:0;display:flex;flex-direction:column;max-height:calc(92vh - 100px);">
+      <div class="dm-cgrun-tabs">
+        <button class="dm-cgrun-tab active" data-pane="log" onclick="switchDmCgRunPane('log')">运行日志</button>
+        <button class="dm-cgrun-tab" data-pane="report" onclick="switchDmCgRunPane('report')">Allure 报告</button>
+      </div>
+      <div class="dm-cgrun-pane" id="dm-cgrun-pane-log">
+        <pre id="dm-cgrun-log" class="dm-cgrun-log">等待开始...</pre>
+      </div>
+      <div class="dm-cgrun-pane hidden" id="dm-cgrun-pane-report">
+        <iframe id="dm-cgrun-iframe" class="dm-cgrun-iframe" src="about:blank"></iframe>
       </div>
     </div>
   </div>

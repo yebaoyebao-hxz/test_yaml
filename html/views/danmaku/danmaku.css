@@ -23,3 +23,39 @@
   .dm-project-card .dm-actions button:hover { border-color: #1a73e8; color: #1a73e8; }
   .dm-empty { text-align: center; padding: 30px; color: #999; font-size: 13px; }
   .dm-form-body { gap: 8px; }
+
+/* ===== 弹幕用例生成 Modal ===== */
+.dm-cg-cats { display:flex; flex-wrap:wrap; gap:4px; padding:10px 14px; border-bottom:1px solid #eee; }
+.dm-cg-toolbar { display:flex; align-items:center; padding:6px 14px; gap:8px; font-size:12px; color:#666; border-bottom:1px solid #f0f0f0; }
+.dm-cg-list { max-height:48vh; overflow-y:auto; padding:8px 14px; }
+.dm-cg-item { display:flex; align-items:flex-start; gap:8px; padding:8px; border:1px solid #eee; border-radius:6px; margin-bottom:6px; cursor:pointer; transition:all .15s; }
+.dm-cg-item:hover { border-color:#1a73e8; background:#f0f4ff; }
+.dm-cg-item.selected { border-color:#1a73e8; background:#e8f0fe; }
+.dm-cg-item input { margin-top:3px; }
+.dm-cg-item .dm-cg-body { flex:1; min-width:0; }
+.dm-cg-item .dm-cg-name { font-weight:600; font-size:13px; color:#333; }
+.dm-cg-item .dm-cg-url { font-size:11px; color:#1a73e8; word-break:break-all; }
+.dm-cg-item .dm-cg-meta { display:flex; gap:6px; align-items:center; margin-top:4px; font-size:11px; color:#888; }
+.dm-cg-footer { display:flex; align-items:center; gap:10px; padding:12px 14px; border-top:1px solid #eee; }
+.dm-cg-footer .btn[disabled] { opacity:.45; cursor:not-allowed; }
+
+/* YAML 编辑 Modal */
+.dm-cgyaml-text { flex:1; min-height:300px; width:100%; border:none; border-bottom:1px solid #eee; padding:12px 16px; font:12px/1.6 Consolas,monospace; resize:none; outline:none; background:#fafafa; color:#333; }
+.dm-cgyaml-status { padding:6px 16px; font-size:12px; color:#666; min-height:20px; border-bottom:1px solid #f0f0f0; background:#fafafa; }
+.dm-cgyaml-status.ok { color:#52c41a; }
+.dm-cgyaml-status.err { color:#ff4d4f; }
+.dm-cgyaml-footer { display:flex; align-items:center; gap:10px; padding:10px 14px; }
+
+/* 运行窗口 Modal */
+.dm-cgrun-tabs { display:flex; gap:4px; padding:8px 14px 0; border-bottom:1px solid #eee; }
+.dm-cgrun-tab { padding:6px 16px; border:1px solid transparent; border-bottom:none; background:none; cursor:pointer; font-size:13px; color:#666; border-radius:6px 6px 0 0; }
+.dm-cgrun-tab.active { background:#fff; border-color:#eee; color:#1a73e8; font-weight:600; }
+.dm-cgrun-pane { flex:1; min-height:0; display:flex; flex-direction:column; }
+.dm-cgrun-pane.hidden { display:none; }
+.dm-cgrun-log { flex:1; min-height:300px; margin:0; padding:12px 16px; background:#1e1e1e; color:#ccc; font:12px/1.6 Consolas,monospace; overflow:auto; white-space:pre-wrap; word-break:break-all; }
+.dm-cgrun-iframe { flex:1; min-height:480px; border:none; width:100%; }
+.dm-cgrun-status { padding:2px 10px; border-radius:10px; font-size:12px; font-weight:600; margin-right:10px; }
+.dm-cgrun-status.idle { background:#f0f0f0; color:#666; }
+.dm-cgrun-status.running { background:#fff3e0; color:#fa8c16; }
+.dm-cgrun-status.ok { background:#e6f7e6; color:#52c41a; }
+.dm-cgrun-status.err { background:#fff1f0; color:#ff4d4f; }

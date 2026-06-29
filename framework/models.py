@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Union
 from enum import Enum
 
+from pydantic import field_validator
+
 
 class HTTPMethod(str, Enum):
     GET = "GET"
@@ -111,6 +113,12 @@ class CaseData:
     # 依赖
     dependence_case: bool = False
     dependence_case_data: Optional[List[DependentCaseData]] = None
+    @field_validator('dependence_case_data', mode = 'before')
+    @classmethod
+    def _convert_dict_to_list(cls, v):
+        if isinstance(v, dict):
+            return [v]
+        return v
 
     # SQL（预留）
     sql: Optional[List[str]] = None

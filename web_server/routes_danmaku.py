@@ -695,3 +695,198 @@ def api_danmaku_ws_perf():
     except Exception as e:
         traceback.print_exc()
         return jsonify({"success": False, "error": str(e)}), 500
+
+# ═══════ 弹幕用例生成 / 执行 ═══════
+@danmaku_bp.route("/api/danmaku/case/generate", methods=["POST"])
+def api_danmaku_case_generate():
+    """根据选中的弹幕项目 ID 列表，生成冒烟或压测 YAML"""
+    try:
+        body = request.get_json(force=True) or {}
+        ids = body.get("ids") or []
+        mode = (body.get("mode") or "smoke").strip().lower()
+        normalize = bool(body.get("normalize_assert", False))
+        if not isinstance(ids, list) or not ids:
+            return jsonify({"success": False, "error": "ids 不能为空"}), 400
+        if mode not in ("smoke", "stress"):
+            return jsonify({"success": False, "error": "mode 必须是 smoke 或 stress"}), 400
+
+        # 1. 取项目
+        conn = get_db_conn()
+        try:
+            with conn.cursor() as cur:
+                fmt = ",".join(["%s"] * len(ids))
+                cur.execute(f"SELECT * FROM danmaku_endpoints WHERE id IN ({fmt})", tuple(ids))
+                rows = cur.fetchall()
+                cols = [c[0] for c in cur.description] if cur.description else []
+        finally:
+            conn.close()
+
+        if not rows:
+            return jsonify({"success": False, "error": "未找到所选接口"}), 404
+
+        projects = [dict(r) if not isinstance(r, dict) else r for r in rows]
+        # 2. 构建文本输入（按项目逐段拼接）
+        import json as _json
+        chunks = []
+        for p in projects:
+            name = p.get("endpoint_name") or p.get("project_name") or "接口" + str(p.get("id", ""))
+            url = p.get("endpoint_url") or ""
+            method = p.get("method") or "GET"
+            headers_raw = p.get("headers") or ""
+            body_content = p.get("body") or ""
+            chunk = "[{}]\nURL: {}\nMethod: {}\n".format(name, url, method)
+            if headers_raw:
+                try:
+                    hdrs = _json.loads(headers_raw) if isinstance(headers_raw, str) else headers_raw
+                    if isinstance(hdrs, dict) and hdrs:
+                        chunk += "Headers:\n" + "\n".join("  {}: {}".format(k, v) for k, v in hdrs.items()) + "\n"
+                except Exception:
+                    if headers_raw.strip():
+                        chunk += "Headers: {}\n".format(headers_raw)
+            if body_content and method != "GET":
+                chunk += "Body: {}\n".format(body_content)
+            chunks.append(chunk)
+        rich_input = "\n".join(chunks)
+        if mode == "smoke":
+            rich_input += "\n请按接口分别生成冒烟测试用例（每个接口一个 case_id），覆盖正常/异常流程，提取 token 写入 dependence_case。"
+        else:
+            rich_input += "\n请按接口分别生成压测测试用例（每个接口一个 case_id），使用并发/循环结构验证性能，提取 token 写入 dependence_case。"
+        if normalize:
+            rich_input += "\n【标准化断言】仅保留 status_code 和 code 两条断言，其余删除。"
+
+        # 3. 调用 AI 生成器
+        from utils.read_files_tools.smoke_test_case_generator import generate_smoke_case
+        from utils.read_files_tools.stress_test_case_generator import generate_stress_case
+        if mode == "smoke":
+            ai_result = generate_smoke_case("text", rich_input, normalize_assert=normalize)
+        else:
+            ai_result = generate_stress_case("text", rich_input, normalize_assert=normalize)
+        if not ai_result.get("success"):
+            return jsonify({"success": False, "error": ai_result.get("error", "AI 生成失败")}), 500
+
+        return jsonify({
+            "success": True,
+            "yaml": ai_result.get("yaml", ""),
+            "summary": ai_result.get("summary") or ("danmaku_{}".format(mode)),
+            "model": ai_result.get("model", ""),
+            "count": len(projects),
+            "mode": mode,
+        })
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"success": False, "error": "生成失败: {}".format(e)}), 500
+
+
+@danmaku_bp.route("/api/danmaku/case/run", methods=["POST"])
+def api_danmaku_case_run():
+    """把生成的 YAML 存到数据库 + 跑 pytest + 生成 Allure 报告（内部转发到 /api/execute）"""
+    try:
+        body = request.get_json(force=True) or {}
+        yaml_body = body.get("yaml_body", "") or body.get("yaml", "")
+        if not yaml_body:
+            return jsonify({"success": False, "error": "yaml_body 为空"}), 400
+        summary = body.get("summary") or "danmaku_case"
+        filename = body.get("filename") or (summary.replace(" ", "_")[:30] or "danmaku_case")
+        # 复用 /api/execute
+        from web_server.routes_execute import api_execute
+        from flask import current_app
+        with current_app.test_request_context(
+            "/api/execute",
+            method="POST",
+            json={
+                "yaml_body": yaml_body,
+                "filename": filename,
+                "input_type": "danmaku_project",
+                "input_content": body.get("input_content", ""),
+                "summary": summary,
+                "model": body.get("model", ""),
+            },
+        ):
+            resp = api_execute()
+            if isinstance(resp, tuple):
+                data, status = resp
+                payload = data.get_json() if hasattr(data, "get_json") else {}
+            else:
+                payload = resp.get_json() if hasattr(resp, "get_json") else {"success": False, "error": "no data"}
+                status = resp.status_code if hasattr(resp, "status_code") else 200
+        if status and status >= 400:
+            return jsonify(payload), status
+        return jsonify({"success": True, **payload})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"success": False, "error": "执行失败: {}".format(e)}), 500
+
+
+@danmaku_bp.route("/api/danmaku/case/ai-assert", methods=["POST"])
+def api_danmaku_case_ai_assert():
+    """对生成的 YAML 跑 AI 断言（转发到 /api/ai_assert），返回丰富日志字段供运行窗口显示"""
+    import time
+    t0 = time.time()
+    log_lines = []
+    try:
+        body = request.get_json(force=True) or {}
+        yaml_body = body.get("yaml_body", "") or body.get("yaml", "")
+        if not yaml_body:
+            return jsonify({"success": False, "error": "yaml_body 为空",
+                            "log": "[ERROR] yaml_body 为空", "elapsed": 0}), 400
+        normalize = bool(body.get("normalize_asserts", False))
+        log_lines.append(f"[INFO] 收到 YAML 长度: {len(yaml_body)} 字节")
+        log_lines.append(f"[INFO] normalize_asserts = {normalize}")
+        log_lines.append("[INFO] 转发到 /api/ai_assert ...")
+        from web_server.routes_ai_assert import api_ai_assert
+        from flask import current_app
+        with current_app.test_request_context(
+            "/api/ai_assert",
+            method="POST",
+            json={"yaml_body": yaml_body, "normalize_asserts": normalize},
+        ):
+            resp = api_ai_assert()
+            if isinstance(resp, tuple):
+                data, status = resp
+                payload = data.get_json() if hasattr(data, "get_json") else {}
+            else:
+                payload = resp.get_json() if hasattr(resp, "get_json") else {"success": False, "error": "no data"}
+                status = resp.status_code if hasattr(resp, "status_code") else 200
+        if status and status >= 400:
+            elapsed = round(time.time() - t0, 2)
+            err_msg = payload.get("error", f"HTTP {status}")
+            log_lines.append(f"[FAIL] {err_msg}")
+            return jsonify({
+                "success": False, "error": err_msg,
+                "log": "\n".join(log_lines), "elapsed": elapsed,
+            }), status
+        # 成功：把 results 展开成可读日志
+        results = payload.get("results", [])
+        all_passed = payload.get("success", False)
+        log_lines.append(f"[INFO] 验证用例数: {len(results)}")
+        passed = 0
+        for r in results:
+            cid = r.get("case_id", "?")
+            st = r.get("status", "?")
+            reason = r.get("reason", "")
+            if st in ("通过", "通过", "PASS"):
+                passed += 1
+                log_lines.append(f"  ✓ [{cid}] {st}  {reason}")
+            else:
+                log_lines.append(f"  ✗ [{cid}] {st}  {reason}")
+        log_lines.append(f"[{'OK' if all_passed else 'FAIL'}] 通过 {passed}/{len(results)} (用时 {round(time.time()-t0,2)}s)")
+        elapsed = round(time.time() - t0, 2)
+        return jsonify({
+            "success": all_passed,
+            "yaml": yaml_body,  # 当前后端不修改 YAML
+            "results": results,
+            "summary": payload.get("summary", f"{passed}/{len(results)}"),
+            "assertions_count": len(results),
+            "elapsed": elapsed,
+            "log": "\n".join(log_lines),
+            "mode": "ai_assert",
+        })
+    except Exception as e:
+        elapsed = round(time.time() - t0, 2)
+        traceback.print_exc()
+        log_lines.append(f"[EXCEPTION] {type(e).__name__}: {e}")
+        return jsonify({
+            "success": False, "error": f"AI 断言异常: {e}",
+            "log": "\n".join(log_lines), "elapsed": elapsed,
+            "traceback": traceback.format_exc(),
+        }), 500

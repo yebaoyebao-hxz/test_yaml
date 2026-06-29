@@ -194,9 +194,9 @@ def api_execute():
                             total = stats.get("total", 0) or 1
                             cur.execute(
                                 """INSERT INTO test_allure_reports
-                                    (yaml_case_id, report_path, total, passed, failed,
-                                     skipped, broken, pass_rate, duration, exec_status)
-                                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                                    (yaml_case_id, report_path, total_tests, passed, failed,
+                                     skipped, broken, pass_rate, duration_ms)
+                                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                                 (
                                     mysql_case_id,
                                     str(REPORT_DIR),
@@ -207,10 +207,18 @@ def api_execute():
                                     stats.get("broken", 0),
                                     round(stats.get("passed", 0) / total * 100, 2),
                                     stats.get("duration", 0),
-                                    "passed" if proc.returncode == 0 else "failed",
                                 )
                             )
                             mysql_conn.commit()
+                    finally:
+                        mysql_conn.close()
+                except Exception as e:
+                    print(f"[WARN] MySQL 写入报告失败: {e}")
+
+                # exec_status UPDATE（独立 try，报告写失败不影响状态更新）
+                try:
+                    mysql_conn = get_db_conn()
+                    try:
                         with mysql_conn.cursor() as cur:
                             cur.execute(
                                 "UPDATE test_yaml_cases SET exec_status=%s WHERE id=%s",
@@ -220,7 +228,7 @@ def api_execute():
                     finally:
                         mysql_conn.close()
                 except Exception as e:
-                    print(f"[WARN] MySQL 写入报告失败: {e}")
+                    print(f"[WARN] MySQL 更新状态失败: {e}")
             else:
                 try:
                     mysql_conn = get_db_conn()

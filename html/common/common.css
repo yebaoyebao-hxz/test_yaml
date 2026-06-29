@@ -35,7 +35,7 @@
   .view-section { display: block; }
   .view-section.hidden { display: none; }
 
-  /* ── 运行记录视图 ── */
+  /* ── 用例仓库视图 ── */
   .records-wrap { max-width: 1400px; margin: 0 auto; padding: 16px 20px; }
   .records-toolbar {
     background: #fff; border-radius: 10px 10px 0 0; padding: 12px 16px;

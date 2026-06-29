@@ -43,8 +43,8 @@ def api_db_records():
                         COALESCE(tc.input_content, '') as input_content,
                         COALESCE(tc.yaml_body, '') as yaml_body,
                         DATE_FORMAT(tc.created_at, '%%Y-%%m-%%d %%H:%%i:%%S') as created_at,
-                        tr.id as report_id, tr.total, tr.passed, tr.failed,
-                        tr.skipped, tr.broken, tr.pass_rate, tr.duration,
+                        tr.id as report_id, tr.total_tests, tr.passed, tr.failed,
+                        tr.skipped, tr.broken, tr.pass_rate, tr.duration_ms,
                         tr.report_path
                     FROM test_yaml_cases tc
                     LEFT JOIN test_allure_reports tr ON tc.id = tr.yaml_case_id
@@ -54,7 +54,7 @@ def api_db_records():
                 )
                 rows = cur.fetchall()
                 cols = [d[0] for d in cur.description]
-            records = [dict(zip(cols, row)) for row in rows]
+            records = [dict(row) if not isinstance(row, dict) else row for row in rows]
         finally:
             mysql_conn.close()
         return jsonify({
