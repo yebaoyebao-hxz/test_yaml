@@ -1640,7 +1640,7 @@ async function doDmCaseGenerate(mode) {
   } catch (e) { showToast('生成异常: ' + e.message, 'err'); }
   finally {
     btn.disabled = false;
-    btn.textContent = mode === 'smoke' ? '🌫️ 生成冒烟用例' : '🔥 生成压测用例';
+    btn.textContent = mode === 'smoke' ? '🌫️ 冒烟用例' : '🔥 压测用例';
   }
 }
 
