@@ -13,10 +13,16 @@
 <link rel="stylesheet" href="./views/perf/perf.css">
 <link rel="stylesheet" href="./views/danmaku/danmaku.css">
 <link rel="stylesheet" href="./views/danmaku-ws/danmaku-ws.css">
+<link rel="stylesheet" href="./views/devices/devices.css">
+<link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
+<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+<script src="https://unpkg.com/element-plus/dist/index.full.min.js"></script>
+<script src="https://unpkg.com/echarts@5/dist/echarts.min.js"></script>
 </head>
 <body>
 <div id="header-container"></div>
 <div id="page-tabs-container"></div>
+<div id="view-devices" class="view-section hidden"></div>
 
 <script>
 // Module Loader -- wait for header.html + page-tabs.html, then load views and bind DOM events
@@ -32,7 +38,7 @@ fetch('./common/header.html').then(r=>r.text()).then(html=>{
 fetch('./common/page-tabs.html').then(r=>r.text()).then(html=>{
   document.getElementById('page-tabs-container').innerHTML = html;
   _tabsReady = true; _onDomReady();
-  const views = ['generate','records','perf','danmaku','danmaku-ws'];
+  const views = ['generate','records','perf','danmaku','danmaku-ws','devices'];
   views.forEach(v => {
     fetch('./views/'+v+'/'+v+'.html').then(r=>r.text()).then(h=>{
       const el = document.getElementById('view-'+v);
@@ -576,6 +582,10 @@ async function setDbPath() {
 
 // ── 页签切换 ──
 function switchPage(page) {
+  const isDevices = page === 'devices';
+  // 设备管理页使用独立全屏布局，隐藏顶栏和页签
+  document.getElementById('header-container').classList.toggle('devices-active', isDevices);
+  document.getElementById('page-tabs-container').classList.toggle('devices-active', isDevices);
   document.querySelectorAll('.page-tab').forEach(b => {
     b.classList.toggle('active', b.dataset.page === page);
   });
@@ -584,9 +594,11 @@ function switchPage(page) {
   document.getElementById('view-perf').classList.toggle('hidden', page !== 'perf');
   document.getElementById('view-danmaku').classList.toggle('hidden', page !== 'danmaku');
   document.getElementById('view-danmaku-ws').classList.toggle('hidden', page !== 'danmaku-ws');
+  document.getElementById('view-devices').classList.toggle('hidden', !isDevices);
   if (page === 'records') loadRecords();
   if (page === 'danmaku') loadDanmakuProjects();
   if (page === 'danmaku-ws') loadDanmakuWsProjects();
+  if (isDevices) initDevicesView();
 }
 
 let allRecords = [];
@@ -2372,6 +2384,381 @@ function copyConsole() {
 
 loadDbConfig();
 loadDbCount();
+
+// ═══════════════════════════════════════
+// 设备管理 Vue3 应用
+// ═══════════════════════════════════════
+let _devicesVueApp = null;
+let _devicesInited = false;
+
+function initDevicesView() {
+  if (_devicesInited) return;
+  _devicesInited = true;
+
+  const { createApp, ref, reactive, computed, watch, onMounted, onUnmounted, nextTick } = Vue;
+
+  _devicesVueApp = createApp({
+    setup() {
+      // ── 模拟设备数据 ──
+      const makeDevice = (id, cfg) => ({
+        id, name: cfg.name, model: cfg.model, serial: cfg.serial,
+        os: cfg.os, resolution: cfg.resolution, connection: cfg.connection || 'USB',
+        group: cfg.group || '普通测试组', type: cfg.type || '真机',
+        platform: cfg.platform || 'Android',
+        status: cfg.status || 'online', temp: cfg.temp || 36,
+        fps: cfg.fps || 60, cpu: cfg.cpu || 35,
+      });
+
+      const devices = reactive([
+        makeDevice(1,{name:'iPhone 15 Pro #1',model:'iPhone 15 Pro',serial:'SN-A001',os:'iOS 18.1',resolution:'2556×1179',group:'手游专用组',type:'真机',platform:'iOS',status:'online',temp:38,fps:60,cpu:42}),
+        makeDevice(2,{name:'iPhone 15 Pro #2',model:'iPhone 15 Pro',serial:'SN-A002',os:'iOS 18.1',resolution:'2556×1179',group:'手游专用组',type:'真机',platform:'iOS',status:'busy',temp:41,fps:58,cpu:65}),
+        makeDevice(3,{name:'iPhone 14 #1',model:'iPhone 14',serial:'SN-A003',os:'iOS 17.6',resolution:'2532×1170',group:'手游专用组',type:'真机',platform:'iOS',status:'online',temp:35,fps:60,cpu:30}),
+        makeDevice(4,{name:'华为 Mate 60 Pro',model:'Mate 60 Pro',serial:'SN-H001',os:'HarmonyOS 4.2',resolution:'2720×1260',group:'手游专用组',type:'真机',platform:'鸿蒙',status:'online',temp:37,fps:60,cpu:38}),
+        makeDevice(5,{name:'华为 P70 #1',model:'P70',serial:'SN-H002',os:'HarmonyOS 4.2',resolution:'2760×1256',group:'手游专用组',type:'真机',platform:'鸿蒙',status:'fault',temp:48,fps:24,cpu:92}),
+        makeDevice(6,{name:'小米 14 Ultra',model:'14 Ultra',serial:'SN-X001',os:'Android 15',resolution:'3200×1440',group:'手游专用组',type:'真机',platform:'Android',status:'online',temp:39,fps:60,cpu:45}),
+        makeDevice(7,{name:'OPPO Find X8',model:'Find X8',serial:'SN-O001',os:'Android 14',resolution:'2780×1264',group:'普通测试组',type:'真机',platform:'Android',status:'offline',temp:0,fps:0,cpu:0}),
+        makeDevice(8,{name:'vivo X100s',model:'X100s',serial:'SN-V001',os:'Android 15',resolution:'2800×1260',group:'普通测试组',type:'真机',platform:'Android',status:'online',temp:36,fps:60,cpu:33}),
+        makeDevice(9,{name:'三星 S24 Ultra',model:'S24 Ultra',serial:'SN-SS01',os:'Android 14',resolution:'3120×1440',group:'普通测试组',type:'真机',platform:'Android',status:'online',temp:37,fps:59,cpu:41}),
+        makeDevice(10,{name:'Android 模拟器 #1',model:'Pixel 8 Pro',serial:'EMU-001',os:'Android 14',resolution:'2400×1080',group:'模拟器组',type:'模拟器',platform:'Android',status:'online',temp:0,fps:30,cpu:55,connection:'TCP'}),
+        makeDevice(11,{name:'Android 模拟器 #2',model:'Pixel 8 Pro',serial:'EMU-002',os:'Android 14',resolution:'2400×1080',group:'模拟器组',type:'模拟器',platform:'Android',status:'busy',temp:0,fps:28,cpu:60,connection:'TCP'}),
+        makeDevice(12,{name:'Android 模拟器 #3',model:'Pixel 8 Pro',serial:'EMU-003',os:'Android 14',resolution:'2400×1080',group:'模拟器组',type:'模拟器',platform:'Android',status:'online',temp:0,fps:30,cpu:48,connection:'TCP'}),
+        makeDevice(13,{name:'iPhone 15 Pro #3',model:'iPhone 15 Pro',serial:'SN-A004',os:'iOS 18.1',resolution:'2556×1179',group:'手游专用组',type:'真机',platform:'iOS',status:'offline',temp:0,fps:0,cpu:0}),
+        makeDevice(14,{name:'华为 Mate 60 Pro #2',model:'Mate 60 Pro',serial:'SN-H003',os:'HarmonyOS 4.2',resolution:'2720×1260',group:'手游专用组',type:'真机',platform:'鸿蒙',status:'online',temp:36,fps:60,cpu:35}),
+        makeDevice(15,{name:'Redmi K70',model:'K70',serial:'SN-R001',os:'Android 14',resolution:'3200×1440',group:'普通测试组',type:'真机',platform:'Android',status:'busy',temp:42,fps:55,cpu:72}),
+        makeDevice(16,{name:'一加 13',model:'OnePlus 13',serial:'SN-Y001',os:'Android 15',resolution:'3168×1440',group:'普通测试组',type:'真机',platform:'Android',status:'online',temp:35,fps:60,cpu:28}),
+      ]);
+
+      const searchText = ref('');
+      const filterType = ref('');
+      const filterStatus = ref('');
+      const filterGroup = ref('');
+      const selectedIds = ref([]);
+      const batchMenuOpen = ref(false);
+      const utilOpen = ref(false);
+      const remoteDevice = ref(null);
+      const perfDevice = ref(null);
+      const alert = reactive({ show: false, msg: '', type: 'warn' });
+      const remoteCanvasW = 400, remoteCanvasH = 750;
+
+      // ECharts 实例引用
+      const miniChartRefs = {};
+      const thumbRefs = {};
+      const remoteCanvasRef = ref(null);
+      const utilChartRef = ref(null);
+      const utilTrendRef = ref(null);
+      const perfFpsRef = ref(null);
+      const perfTempRef = ref(null);
+
+      const setMiniChartRef = (key, el) => { if (el) miniChartRefs[key] = el; };
+      const setThumbRef = (id, el) => { if (el) thumbRefs[id] = el; };
+
+      // 下拉菜单外部点击关闭
+      const closeBatchMenu = (e) => { if (batchMenuOpen.value) batchMenuOpen.value = false; };
+
+      // ── 计算属性 ──
+      const filteredDevices = computed(() => {
+        return devices.filter(d => {
+          if (searchText.value) {
+            const kw = searchText.value.toLowerCase();
+            if (!(d.name + d.model + d.serial).toLowerCase().includes(kw)) return false;
+          }
+          if (filterType.value && d.type !== filterType.value) return false;
+          if (filterStatus.value && d.status !== filterStatus.value) return false;
+          if (filterGroup.value && d.group !== filterGroup.value) return false;
+          return true;
+        });
+      });
+
+      const busyCount = computed(() => devices.filter(d => d.status === 'busy').length);
+      const utilRate = computed(() => devices.length > 0 ? Math.round(busyCount.value / devices.length * 100) : 0);
+
+      const statsCards = computed(() => [
+        { key:'all', label:'全部设备', icon:'📱', value: devices.length, clickFilter:'', sub: '总计在线设备池' },
+        { key:'online', label:'在线设备', icon:'🟢', value: devices.filter(d=>d.status==='online').length, clickFilter:'', sub: '空闲可用' },
+        { key:'offline', label:'离线设备', icon:'⚫', value: devices.filter(d=>d.status==='offline').length, clickFilter:'', sub: '需排查' },
+        { key:'real', label:'真机', icon:'📲', value: devices.filter(d=>d.type==='真机').length, clickFilter:'真机', sub: '物理设备' },
+        { key:'emu', label:'模拟器', icon:'💻', value: devices.filter(d=>d.type==='模拟器').length, clickFilter:'模拟器', sub: '虚拟设备' },
+        { key:'android', label:'安卓', icon:'🤖', value: devices.filter(d=>d.platform==='Android').length, clickFilter:'', sub: 'Android 设备' },
+        { key:'ios', label:'iOS', icon:'🍎', value: devices.filter(d=>d.platform==='iOS').length, clickFilter:'', sub: 'Apple 设备' },
+        { key:'harmony', label:'鸿蒙/手游闲置', icon:'🔷', value: devices.filter(d=>d.platform==='鸿蒙').length, clickFilter:'', sub: '空闲: ' + devices.filter(d=>d.platform==='鸿蒙'&&d.status==='online').length + '台' },
+      ]);
+
+      const applyFilters = () => {};
+
+      // ── 迷你图表绘制 ──
+      const drawMiniCharts = () => {
+        Object.entries(miniChartRefs).forEach(([key, el]) => {
+          if (!el) return;
+          let instance = echarts.getInstanceByDom(el);
+          if (!instance) instance = echarts.init(el);
+          const hours = Array.from({length: 24}, (_, i) => i + ':00');
+          const data = Array.from({length: 24}, () => Math.floor(Math.random() * 40 + 10));
+          instance.setOption({
+            grid: { left: 0, right: 0, top: 2, bottom: 2 },
+            xAxis: { show: false, data: hours },
+            yAxis: { show: false, min: 0 },
+            series: [{
+              type: 'line', data, smooth: true, symbol: 'none',
+              lineStyle: { color: '#1a73e8', width: 1.5 },
+              areaStyle: { color: new echarts.graphic.LinearGradient(0,0,0,1,[
+                {offset:0,color:'rgba(26,115,232,.25)'},{offset:1,color:'rgba(26,115,232,.02)'}
+              ])}
+            }]
+          }, { notMerge: true });
+        });
+      };
+
+      // ── 设备缩略图仿真绘制 ──
+      const drawThumbnails = () => {
+        devices.forEach(dev => {
+          const canvas = thumbRefs[dev.id];
+          if (!canvas) return;
+          const ctx = canvas.getContext('2d');
+          const w = canvas.width, h = canvas.height;
+          // 背景
+          ctx.fillStyle = dev.status === 'offline' ? '#1a1a2e' :
+            dev.status === 'fault' ? '#3d0000' : '#0a1628';
+          ctx.fillRect(0, 0, w, h);
+          if (dev.status === 'offline') return;
+          // 模拟手机屏幕
+          ctx.fillStyle = '#1e3a5f';
+          ctx.fillRect(4, 10, w - 8, h - 60);
+          // 模拟app内容
+          if (dev.status === 'busy') {
+            ctx.fillStyle = '#27ae60'; ctx.fillRect(12, 20, w - 24, 30);
+            ctx.fillText('🎮 运行中...', 20, 42);
+            ctx.fillStyle = '#3498db'; ctx.fillRect(12, 55, w - 24, 50);
+            ctx.fillStyle = '#e67e22'; ctx.fillRect(12, 110, (w - 24) * .6, 40);
+            ctx.fillText('automating', 20, 135);
+          } else if (dev.status === 'fault') {
+            ctx.fillStyle = '#e74c3c'; ctx.fillRect(12, 30, w - 24, 80);
+            ctx.fillStyle = '#fff'; ctx.font = '14px sans-serif';
+            ctx.fillText('⚠️ ERROR', 18, 75);
+          } else {
+            ctx.fillStyle = '#16213e'; ctx.fillRect(12, 20, w - 24, 30);
+            ctx.fillStyle = '#aaa'; ctx.font = '11px monospace';
+            ctx.fillText(dev.model, 16, 40);
+            ctx.fillStyle = '#2c3e6b'; ctx.fillRect(12, 55, w - 24, 75);
+            ctx.fillStyle = '#5dade2'; ctx.font = '10px sans-serif';
+            ctx.fillText('🟢 待命中', 20, 100);
+          }
+          // 底部模拟导航栏
+          ctx.fillStyle = 'rgba(255,255,255,.1)';
+          ctx.fillRect(4, h - 48, w - 8, 38);
+          ctx.fillStyle = '#aaa'; ctx.font = '8px sans-serif';
+          const icons = ['◁', '○', '□'];
+          icons.forEach((ico, i) => ctx.fillText(ico, 20 + i * 30, h - 25));
+        });
+      };
+
+      // ── 底部利用率图表 ──
+      const drawUtilCharts = () => {
+        if (!utilOpen.value) return;
+        nextTick(() => {
+          // 饼图
+          const el1 = utilChartRef.value;
+          if (el1) {
+            let inst = echarts.getInstanceByDom(el1);
+            if (!inst) inst = echarts.init(el1);
+            inst.setOption({
+              tooltip: { trigger: 'item' },
+              legend: { bottom: 0 },
+              series: [{
+                type: 'pie', radius: ['45%', '78%'], center: ['50%', '48%'],
+                data: [
+                  { value: 420, name: 'AI手游任务' },
+                  { value: 280, name: '普通App自动化' },
+                ],
+                emphasis: { itemStyle: { shadowBlur: 10, shadowOffsetX: 0, shadowColor: 'rgba(0,0,0,.3)' } },
+                itemStyle: { borderRadius: 4, borderColor: '#fff', borderWidth: 2 }
+              }]
+            }, { notMerge: true });
+          }
+          // 趋势线
+          const el2 = utilTrendRef.value;
+          if (el2) {
+            let inst2 = echarts.getInstanceByDom(el2);
+            if (!inst2) inst2 = echarts.init(el2);
+            const days = ['7/08','7/09','7/10','7/11','7/12','7/13','7/14'];
+            inst2.setOption({
+              tooltip: { trigger: 'axis' },
+              legend: { bottom: 0, data: ['手游任务','App自动化'] },
+              xAxis: { type: 'category', data: days },
+              yAxis: { type: 'value', name: '占用(台)' },
+              series: [
+                { name: '手游任务', type: 'line', data: [8,10,12,9,13,14,11], smooth: true, areaStyle: { opacity: .15 }, itemStyle: { color: '#e67e22' } },
+                { name: 'App自动化', type: 'line', data: [4,5,6,7,5,6,7], smooth: true, areaStyle: { opacity: .15 }, itemStyle: { color: '#3498db' } },
+              ]
+            }, { notMerge: true });
+          }
+        });
+      };
+
+      // ── 性能曲线弹窗图表 ──
+      const drawPerfCharts = () => {
+        if (!perfDevice.value) return;
+        nextTick(() => {
+          const t = Array.from({length: 60}, (_, i) => (60 - i) + 's前');
+          const genData = (base, amp) => Array.from({length: 60}, () => Math.max(0, base + (Math.random() - .5) * amp));
+          [
+            { ref: perfFpsRef, name: 'FPS', data: genData(58, 20), color: '#27ae60', max: 70 },
+            { ref: perfTempRef, name: '温度', data: genData(38, 8), color: '#e74c3c', max: 55 },
+          ].forEach(cfg => {
+            const el = cfg.ref.value;
+            if (!el) return;
+            let inst = echarts.getInstanceByDom(el);
+            if (!inst) inst = echarts.init(el);
+            inst.setOption({
+              grid: { left: 40, right: 15, top: 10, bottom: 25 },
+              xAxis: { type: 'category', data: t, axisLabel: { show: false } },
+              yAxis: { type: 'value', min: 0, max: cfg.max },
+              series: [{
+                name: cfg.name, type: 'line', data: cfg.data,
+                smooth: true, symbol: 'none',
+                lineStyle: { color: cfg.color, width: 2 },
+                areaStyle: { color: new echarts.graphic.LinearGradient(0,0,0,1,[
+                  {offset:0,color:cfg.color.replace(')','.3)')},{offset:1,color:cfg.color.replace(')','.02)')}
+                ])}
+              }]
+            }, { notMerge: true });
+          });
+        });
+      };
+
+      // ── 远程控制仿真 ──
+      const drawRemoteScreen = () => {
+        if (!remoteDevice.value) return;
+        nextTick(() => {
+          const canvas = remoteCanvasRef.value;
+          if (!canvas) return;
+          const ctx = canvas.getContext('2d');
+          const w = canvas.width, h = canvas.height;
+          ctx.fillStyle = '#0a1628'; ctx.fillRect(0, 0, w, h);
+          // 模拟手机界面
+          ctx.fillStyle = '#1e3a5f'; ctx.fillRect(10, 20, w - 20, h - 80);
+          ctx.fillStyle = '#fff'; ctx.font = '18px sans-serif';
+          ctx.fillText('📱 ' + remoteDevice.value.name, 30, 60);
+          ctx.fillStyle = '#2c3e6b'; ctx.fillRect(10, 90, w - 20, h - 200);
+          for (let y = 100; y < h - 120; y += 60) {
+            ctx.fillStyle = '#34495e'; ctx.fillRect(30, y, w - 60, 40);
+          }
+          ctx.fillStyle = '#3498db'; ctx.fillRect(30, 100, w - 60, 40);
+          ctx.fillStyle = '#fff'; ctx.font = '14px sans-serif';
+          ctx.fillText('🎮 游戏画面实时投屏', 50, 125);
+          ctx.fillStyle = '#aaa'; ctx.font = '11px sans-serif';
+          ctx.fillText('WebSocket 连接中... 帧率: 30fps', 50, 150);
+          // 底部手势指示
+          ctx.fillStyle = 'rgba(26,115,232,.3)';
+          ctx.fillRect(w / 2 - 40, h - 60, 80, 40);
+          ctx.fillStyle = '#fff'; ctx.font = '12px sans-serif';
+          ctx.fillText('👆 触摸区域', w / 2 - 30, h - 35);
+        });
+      };
+
+      // ── 操作 ──
+      const selectDevice = (dev, e) => {
+        if (e.target.closest('button')) return;
+        if (dev.status === 'offline') return;
+        openRemote(dev);
+      };
+
+      const openRemote = (dev) => {
+        if (dev.status === 'busy') {
+          showAlert('设备被占用，仅允许1人远程操作', 'err'); return;
+        }
+        remoteDevice.value = dev;
+        nextTick(() => drawRemoteScreen());
+      };
+      const closeRemote = () => { remoteDevice.value = null; };
+
+      const openPerfChart = (dev) => {
+        perfDevice.value = dev;
+        nextTick(() => drawPerfCharts());
+      };
+      const closePerfChart = () => { perfDevice.value = null; };
+
+      const remoteAction = (action) => {
+        showAlert('⚙️ ' + action + ' — 后端 WebSocket 指令接口待接入', 'warn');
+      };
+
+      const refreshDevices = () => { showAlert('✅ 设备列表已刷新', 'warn'); };
+      const exportExcel = () => { showAlert('📥 导出功能 — 后端 /api/devices/export 接口待接入', 'warn'); };
+      const batchOp = (op) => {
+        batchMenuOpen.value = false;
+        showAlert('⚙️ ' + op + ' — 批量运维接口待接入 (已选 0 台)', 'warn');
+      };
+
+      const showAlert = (msg, type) => {
+        alert.msg = msg; alert.type = type || 'warn'; alert.show = true;
+        setTimeout(() => { alert.show = false; }, 3000);
+      };
+
+      // ── 导航到其他页签 ──
+      const navTo = (page) => {
+        _devicesInited = false;
+        switchPage(page);
+      };
+
+      // ── 生命周期 ──
+      onMounted(() => {
+        nextTick(() => {
+          drawMiniCharts();
+          drawThumbnails();
+        });
+        // 监听窗口大小变化重绘
+        window.addEventListener('resize', onResize);
+      });
+
+      const onResize = () => {
+        Object.values(miniChartRefs).forEach(el => {
+          const inst = el && echarts.getInstanceByDom(el);
+          if (inst) inst.resize();
+        });
+        [utilChartRef, utilTrendRef, perfFpsRef, perfTempRef].forEach(ref => {
+          const el = ref.value;
+          const inst = el && echarts.getInstanceByDom(el);
+          if (inst) inst.resize();
+        });
+      };
+
+      // 监听 utilOpen 变化
+      watch(utilOpen, (v) => { if (v) drawUtilCharts(); });
+      watch(perfDevice, (v) => { if (v) drawPerfCharts(); });
+      watch(remoteDevice, (v) => { if (v) drawRemoteScreen(); });
+
+      onUnmounted(() => {
+        window.removeEventListener('resize', onResize);
+      });
+
+      return {
+        devices, filteredDevices, searchText, filterType, filterStatus, filterGroup,
+        selectedIds, batchMenuOpen, utilOpen, remoteDevice, perfDevice, alert,
+        remoteCanvasW, remoteCanvasH, remoteCanvasRef, utilChartRef, utilTrendRef,
+        perfFpsRef, perfTempRef,
+        statsCards, busyCount, utilRate,
+        setMiniChartRef, setThumbRef, closeBatchMenu,
+        applyFilters, navTo, selectDevice,
+        openRemote, closeRemote, openPerfChart, closePerfChart,
+        remoteAction, refreshDevices, exportExcel, batchOp,
+      };
+    },
+  });
+
+  // v-click-outside 自定义指令
+  _devicesVueApp.directive('click-outside', {
+    mounted(el, binding) {
+      el.__clickOutside = (e) => {
+        if (!(el === e.target || el.contains(e.target))) binding.value(e);
+      };
+      document.addEventListener('click', el.__clickOutside);
+    },
+    unmounted(el) {
+      document.removeEventListener('click', el.__clickOutside);
+    },
+  });
+
+  _devicesVueApp.mount('#app-devices');
+}
 
 </script>
 </body>
