@@ -1,0 +1,17 @@
+case_common:
+  allureEpic: 测试项目
+  allureFeature: 健康检查
+  allureStory: 测试用例
+
+health_01:
+  host: https://httpbin.org
+  url: /get
+  method: GET
+  detail: 测试GET请求
+  headers: {}
+  data: {}
+  is_run: True
+  dependence_case: False
+  dependence_case_data:
+  assert:
+    status_code: 200

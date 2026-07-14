@@ -1596,7 +1596,15 @@ function dmCgUpdateCount() {
   const total = dmCgAll.length;
   const sel = dmCgSelected.size;
   document.getElementById('dm-cg-count').textContent = '已选 ' + sel + ' / 共 ' + total;
-  document.getElementById('dm-cg-smoke-btn').disabled = sel < 2;
+  const smokeBtn = document.getElementById('dm-cg-smoke-btn');
+  smokeBtn.disabled = sel < 2;
+  if (sel >= 2) {
+    smokeBtn.classList.remove('btn-outline');
+    smokeBtn.classList.add('btn-success');
+  } else {
+    smokeBtn.classList.remove('btn-success');
+    smokeBtn.classList.add('btn-outline');
+  }
 }
 
 function dmCgRenderList(filtered) {
@@ -1644,7 +1652,16 @@ async function doDmCaseGenerate(mode) {
   }
 }
 
-function showDmCgYamlModal() { document.getElementById('dm-cgyaml-modal').classList.remove('hidden'); }
+function showDmCgYamlModal() {
+  const m = document.getElementById('dm-cgyaml-modal');
+  m.classList.remove('hidden');
+  // 只有 YAML 含 stress_type 才显示"执行压测"按钮
+  setTimeout(() => {
+    const y = document.getElementById('dm-cgyaml-text').value;
+    const btn = document.getElementById('dm-cg-stressrun-btn');
+    if (btn) btn.style.display = y.includes('stress_type') ? '' : 'none';
+  }, 50);
+}
 function closeDmCgYamlModal() { document.getElementById('dm-cgyaml-modal').classList.add('hidden'); }
 
 function dmCgCopyYaml() {
@@ -1765,6 +1782,164 @@ async function doDmCaseAiAssert() {
   document.getElementById('dm-cg-ai-text').textContent = '🤖 AI 断言';
 }
 
+// ═══ 压测运行状态 ═══
+let dmStressRunId = null;   // 当前 run_id
+let dmStressReader = null;  // ReadableStream reader（用于 abort）
+let dmStressPaused = false;
+
+async function doDmStressRun() {
+  const yamlBody = document.getElementById('dm-cgyaml-text').value || dmCgYaml;
+  if (!yamlBody) { showToast('YAML 为空', 'err'); return; }
+  dmCgYaml = yamlBody;
+  const btn = document.getElementById('dm-cg-stressrun-btn');
+  if (!btn) return;
+  btn.disabled = true;
+  document.getElementById('dm-cg-stressrun-spinner').style.display = '';
+  document.getElementById('dm-cg-stressrun-text').textContent = '压测中...';
+  openDmCgRunModal();
+  const logEl = document.getElementById('dm-cgrun-log');
+  logEl.textContent = '>>> 开始压测，请等待...\n\n';
+  dmStressRunId = null; dmStressPaused = false;
+  try {
+    const r = await fetch('/api/danmaku/stress/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ yaml_body: yamlBody }),
+    });
+    if (!r.ok) {
+      const txt = await r.text();
+      logEl.textContent += '请求异常 [HTTP ' + r.status + ']: ' + txt.slice(0, 300) + '\n';
+      setDmCgRunStatus('err'); updateDmCgRunStatusSpan('❌ 异常');
+      resetDmStressCtrlBtns();
+    } else {
+      dmStressReader = r.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      while (true) {
+        const { done, value } = await dmStressReader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop() || '';
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const raw = line.slice(6).trim();
+          if (!raw || raw === '[DONE]') continue;
+          let ev;
+          try { ev = JSON.parse(raw); } catch { continue; }
+          // ── run_id ──
+          if (ev.run_id) { dmStressRunId = ev.run_id; showDmStressCtrlBtns(); continue; }
+          // ── error ──
+          if (ev.error) {
+            logEl.textContent += '❌ 错误: ' + ev.error + '\n';
+            setDmCgRunStatus('err'); updateDmCgRunStatusSpan('❌ 异常');
+            resetDmStressCtrlBtns();
+            continue;
+          }
+          // ── cancelled ──
+          if (ev.cancelled) {
+            logEl.textContent += '\n⏹ 压测已终止\n';
+            setDmCgRunStatus('err'); updateDmCgRunStatusSpan('⏹ 已终止');
+            resetDmStressCtrlBtns();
+            continue;
+          }
+          // ── paused ──
+          if (ev.paused) {
+            logEl.textContent += '\n⏸ 压测已暂停...\n';
+            dmStressPaused = true;
+            setDmCgRunStatus('running'); updateDmCgRunStatusSpan('⏸ 已暂停');
+            document.getElementById('dm-cgrun-pause-btn').classList.add('hidden');
+            document.getElementById('dm-cgrun-resume-btn').classList.remove('hidden');
+            continue;
+          }
+          // ── resumed ──
+          if (ev.resumed) {
+            logEl.textContent += '⏵ 压测已恢复\n';
+            dmStressPaused = false;
+            setDmCgRunStatus('running'); updateDmCgRunStatusSpan('▶️ 运行中');
+            document.getElementById('dm-cgrun-pause-btn').classList.remove('hidden');
+            document.getElementById('dm-cgrun-resume-btn').classList.add('hidden');
+            continue;
+          }
+          // ── progress ──
+          if (ev.done != null && ev.item) {
+            const item = ev.item;
+            const m = item.metrics || {};
+            const icon = item.pass ? '✅' : '❌';
+            logEl.textContent += '\n' + '─'.repeat(50) + '\n';
+            logEl.textContent += icon + ' ' + item.name + '\n';
+            logEl.textContent += '  并发:' + item.concurrency + ' 持续:' + item.duration + 's 耗时:' + item.elapsed + 's\n';
+            logEl.textContent += '  请求:' + m.total + ' 成功:' + m.success + ' 失败:' + m.failed + ' 错误率:' + m.error_rate + '\n';
+            logEl.textContent += '  TPS:' + m.tps + ' avg:' + m.avg_rt + 'ms  P50:' + m.p50 + 'ms  P90:' + m.p90 + 'ms  P99:' + m.p99 + 'ms\n';
+            if (item.assertions && item.assertions.length > 0) {
+              logEl.textContent += '  断言:\n';
+              for (const a of item.assertions) {
+                const mk = a.passed ? '✓' : '✗';
+                logEl.textContent += '    ' + mk + ' ' + a.name + ': ' + a.actual + ' ' + a.op + ' ' + a.expected;
+                if (a.reason) logEl.textContent += ' (' + a.reason + ')';
+                logEl.textContent += '\n';
+              }
+            }
+          }
+          // ── summary ──
+          if (ev.done === true) {
+            const allPass = ev.summary && ev.summary.every(function(r2){ return r2.pass; });
+            logEl.textContent += '\n' + (allPass ? '✅ 全部通过' : '❌ 存在失败') + '\n';
+            setDmCgRunStatus(allPass ? 'ok' : 'err');
+            updateDmCgRunStatusSpan(allPass ? '✅ 通过' : '❌ 失败');
+            resetDmStressCtrlBtns();
+          }
+        }
+      }
+      resetDmStressCtrlBtns();
+    }
+  } catch (e) {
+    logEl.textContent += '请求异常: ' + e.message + '\n';
+    setDmCgRunStatus('err'); updateDmCgRunStatusSpan('❌ 异常');
+    resetDmStressCtrlBtns();
+  }
+  dmStressRunId = null; dmStressReader = null;
+  btn.disabled = false;
+  document.getElementById('dm-cg-stressrun-spinner').style.display = 'none';
+  document.getElementById('dm-cg-stressrun-text').textContent = '🚀 执行压测';
+}
+
+// ── 控制按钮显隐 ──
+function showDmStressCtrlBtns() {
+  document.getElementById('dm-cgrun-pause-btn').classList.remove('hidden');
+  document.getElementById('dm-cgrun-stop-btn').classList.remove('hidden');
+  document.getElementById('dm-cgrun-resume-btn').classList.add('hidden');
+}
+function resetDmStressCtrlBtns() {
+  document.getElementById('dm-cgrun-pause-btn').classList.add('hidden');
+  document.getElementById('dm-cgrun-resume-btn').classList.add('hidden');
+  document.getElementById('dm-cgrun-stop-btn').classList.add('hidden');
+}
+
+// ── 终止 ──
+async function doDmStressStop() {
+  if (!dmStressRunId) return;
+  try { await fetch('/api/danmaku/stress/cancel', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({run_id:dmStressRunId}) }); } catch {}
+  // 关闭 SSE reader 让 doDmStressRun 的 while 退出
+  if (dmStressReader) { try { dmStressReader.cancel(); } catch {} }
+}
+
+// ── 暂停 ──
+async function doDmStressPause() {
+  if (!dmStressRunId) return;
+  document.getElementById('dm-cgrun-pause-btn').disabled = true;
+  try { await fetch('/api/danmaku/stress/pause', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({run_id:dmStressRunId}) }); } catch {}
+  document.getElementById('dm-cgrun-pause-btn').disabled = false;
+}
+
+// ── 继续 ──
+async function doDmStressResume() {
+  if (!dmStressRunId) return;
+  document.getElementById('dm-cgrun-resume-btn').disabled = true;
+  try { await fetch('/api/danmaku/stress/resume', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({run_id:dmStressRunId}) }); } catch {}
+  document.getElementById('dm-cgrun-resume-btn').disabled = false;
+}
+
 function openDmCgRunModal() {
   document.getElementById('dm-cgrun-title').textContent = dmCgSummary || '';
   document.getElementById('dm-cgrun-log').textContent = '等待开始...';
@@ -1773,10 +1948,19 @@ function openDmCgRunModal() {
   document.getElementById('dm-cgrun-pane-report').classList.add('hidden');
   setDmCgRunStatus('running');
   updateDmCgRunStatusSpan('▶️ 运行中');
+  resetDmStressCtrlBtns();
   document.getElementById('dm-cgrun-modal').classList.remove('hidden');
   switchDmCgRunPane('log');
 }
-function closeDmCgRunModal() { document.getElementById('dm-cgrun-modal').classList.add('hidden'); }
+function closeDmCgRunModal() {
+  // 关闭时自动发送取消（如果正在运行）
+  if (dmStressRunId) {
+    try { fetch('/api/danmaku/stress/cancel', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({run_id:dmStressRunId}) }); } catch {}
+    if (dmStressReader) { try { dmStressReader.cancel(); } catch {} }
+  }
+  dmStressRunId = null; dmStressReader = null;
+  document.getElementById('dm-cgrun-modal').classList.add('hidden');
+}
 function setDmCgRunStatus(cls) {
   const s = document.getElementById('dm-cgrun-status');
   s.className = 'dm-cgrun-status ' + cls;

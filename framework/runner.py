@@ -40,6 +40,21 @@ class TestRunner:
         self._cases: List[CaseData] = []
         self._results: List[CaseResult] = []
 
+    def _has_stress_cases(self) -> bool:
+        """检查 YAML 中是否包含压测用例（存在 stress_type 字段）"""
+        import yaml
+        try:
+            with open(self.yaml_path, 'r', encoding='utf-8') as f:
+                raw = yaml.safe_load(f)
+            for key, value in raw.items():
+                if key.startswith('case_common'):
+                    continue
+                if isinstance(value, dict) and value.get('stress_type'):
+                    return True
+        except Exception:
+            pass
+        return False
+
     # ── 流程入口 ──
 
     def run(self, case_filter: Optional[str] = None) -> List[CaseResult]:
@@ -48,6 +63,12 @@ class TestRunner:
         Args:
             case_filter: 可选，按 case_id / detail 过滤（模糊匹配）
         """
+        # ── 新增：压测路由 ──
+        if self._has_stress_cases():
+            from .stress_executor import main as stress_main
+            stress_main(str(self.yaml_path))
+            return []  # 压测模式不返回 CaseResult
+
         self._cases = self._parser.parse()
         if case_filter:
             self._cases = [

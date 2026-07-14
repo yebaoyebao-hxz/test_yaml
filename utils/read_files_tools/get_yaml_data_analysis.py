@@ -103,6 +103,9 @@ class CaseData(CaseDataCheck):
         for key, values in data.items():
             # 公共配置中的数据，与用例数据不同，需要单独处理
             if key != 'case_common':
+                # ── 新增：压测用例跳过，走 framework/stress_executor ──
+                if values.get('stress_type'):
+                    continue
                 self.case_data = values
                 self.case_id = key
                 super().check_params_exit()

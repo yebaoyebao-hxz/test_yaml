@@ -167,6 +167,9 @@ class TestCase(BaseModel):
         """兼容 AI 生成的裸字符串列表：['rank_01'] -> [DependentCaseData(case_id='rank_01')]"""
         if v is None:
             return None
+        if isinstance(v, dict):
+            # 空 dict {} → 空 list，非空 dict → 包装为单元素 list
+            return [] if not v else [DependentCaseData(**v)]
         if isinstance(v, list):
             result = []
             for item in v:

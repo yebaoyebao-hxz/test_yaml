@@ -1,0 +1,15 @@
+case_common:
+  allureEpic: FixTest
+  allureFeature: Verify
+health_01:
+  host: https://httpbin.org
+  url: /get
+  method: GET
+  detail: Fix verify
+  headers: {}
+  data: {}
+  is_run: True
+  dependence_case: False
+  dependence_case_data:
+  assert:
+    status_code: 200

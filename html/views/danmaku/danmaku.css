@@ -59,3 +59,11 @@
 .dm-cgrun-status.running { background:#fff3e0; color:#fa8c16; }
 .dm-cgrun-status.ok { background:#e6f7e6; color:#52c41a; }
 .dm-cgrun-status.err { background:#fff1f0; color:#ff4d4f; }
+.dm-cgrun-ctrl { padding:3px 10px; border:1px solid #d9d9d9; border-radius:4px; cursor:pointer; font-size:12px; font-weight:600; margin-right:6px; }
+.dm-cgrun-ctrl.hidden { display:none; }
+.dm-cgrun-ctrl.dm-pause { background:#fff3e0; color:#fa8c16; border-color:#fa8c16; }
+.dm-cgrun-ctrl.dm-pause:hover { background:#fa8c16; color:#fff; }
+.dm-cgrun-ctrl.dm-resume { background:#e6f7ff; color:#1890ff; border-color:#1890ff; }
+.dm-cgrun-ctrl.dm-resume:hover { background:#1890ff; color:#fff; }
+.dm-cgrun-ctrl.dm-stop { background:#fff1f0; color:#ff4d4f; border-color:#ff4d4f; }
+.dm-cgrun-ctrl.dm-stop:hover { background:#ff4d4f; color:#fff; }

@@ -39,9 +39,18 @@ def api_ai_assert():
         _L.add_multi_constructor('', _h)
         case_data = _yaml.load(safe_yaml_body, Loader=_L)
 
-        case_ids = [k for k in case_data.keys() if k != "case_common"]
+        case_ids = [k for k, v in case_data.items() if k != "case_common" and not v.get('stress_type')]
         if not case_ids:
             return jsonify({"success": False, "error": "YAML 中没有用例"}), 400
+
+        # --- 自动补全 host 字段缺失的 scheme ---
+        for k, v in case_data.items():
+            if k == "case_common":
+                continue
+            h = v.get('host')
+            if isinstance(h, str) and h and not h.startswith(('http://', 'https://')):
+                v['host'] = 'https://' + h
+        # ---------------------------------------
 
         results = []
         with httpx.Client(verify=False, timeout=30.0) as client:

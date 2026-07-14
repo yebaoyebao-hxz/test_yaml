@@ -5,6 +5,7 @@ import json
 import os
 import pytest
 from pathlib import Path
+import yaml
 from typing import Any, Dict, Generator, List, Optional
 
 from .parser import CaseParser
@@ -92,6 +93,12 @@ class YamlTestFile(pytest.File):
         parser = CaseParser(str(self.path))
         cases = parser.parse()
 
+        # ── 新增：压测路由 ──
+        if self._has_stress_cases():
+            from framework.stress_executor import main as stress_main
+            stress_main(str(self.path))
+            return  # 不生成 pytest Item
+
         for case in cases:
             if not case.is_run:
                 continue
@@ -100,6 +107,18 @@ class YamlTestFile(pytest.File):
                 name=f"{case.case_id}[{case.detail}]",
                 case=case,
             )
+    def _has_stress_cases(self) -> bool:
+        try:
+            with open(self.path, 'r', encoding='utf-8') as f:
+                raw = yaml.safe_load(f)
+            for key, value in raw.items():
+                if key.startswith('case_common'):
+                    continue
+                if isinstance(value, dict) and value.get('stress_type'):
+                    return True
+        except Exception:
+            pass
+        return False
 
 
 class YamlTestItem(pytest.Item):

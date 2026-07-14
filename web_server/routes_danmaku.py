@@ -6,9 +6,13 @@ import websocket as _ws
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 from utils.read_files_tools.regular_control import regular
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, Response
 
+from web_server.config import PROJECT_ROOT
 from web_server.db import get_db_conn
+import uuid
+from threading import Event
+
 
 # 动态导入 proto（避免在没有 protobuf 环境时报错）
 try:
@@ -20,6 +24,7 @@ except Exception:
     ReqCreateRoom = None
 
 danmaku_bp = Blueprint("danmaku", __name__)
+_active_stress_runs = {}  # {run_id: {"cancel": Event, "pause": Event}}
 
 # ── WS 项目表名 ──
 _WS_PROJECTS_TABLE = "danmaku_ws_projects"
@@ -47,6 +52,11 @@ def _ensure_ws_table():
     finally:
         conn.close()
 
+def _cleanup_run(run_id):
+    if run_id in _active_stress_runs:
+        # 确保先发 cancel 信号停掉线程
+        _active_stress_runs[run_id]["cancel"].set()
+    _active_stress_runs.pop(run_id, None)
 
 def _row_to_dict(row):
     """将数据库行转为 dict，headers 字段做 JSON 解析"""
@@ -302,6 +312,30 @@ def api_danmaku_perf(pid):
         traceback.print_exc()
         return jsonify({"success": False, "error": str(e)}), 500
 
+@danmaku_bp.route("/api/danmaku/stress/cancel", methods=["POST"])
+def api_danmaku_stress_cancel():
+    rid = (request.get_json(silent=True) or {}).get("run_id", "")
+    if rid in _active_stress_runs:
+        _active_stress_runs[rid]["cancel"].set()
+        return jsonify({"success": True, "msg": "取消信号已发送"})
+    return jsonify({"success": False, "error": "run_id 不存在"}), 404
+
+@danmaku_bp.route("/api/danmaku/stress/pause", methods=["POST"])
+def api_danmaku_stress_pause():
+    rid = (request.get_json(silent=True) or {}).get("run_id", "")
+    if rid in _active_stress_runs:
+        _active_stress_runs[rid]["pause"].set()
+        return jsonify({"success": True, "msg": "暂停信号已发送"})
+    return jsonify({"success": False, "error": "run_id 不存在"}), 404
+
+@danmaku_bp.route("/api/danmaku/stress/resume", methods=["POST"])
+def api_danmaku_stress_resume():
+    rid = (request.get_json(silent=True) or {}).get("run_id", "")
+    if rid in _active_stress_runs:
+        _active_stress_runs[rid]["pause"].clear()
+        return jsonify({"success": True, "msg": "已恢复"})
+    return jsonify({"success": False, "error": "run_id 不存在"}), 404
+
 
 # ═══════════════════════════════════════════════════════════════
 # 弹幕长链接压测 - 项目管理
@@ -434,6 +468,120 @@ def api_danmaku_ws_delete(pid):
         traceback.print_exc()
         return jsonify({"success": False, "error": str(e)}), 500
 
+@danmaku_bp.route("/api/danmaku/stress/run", methods=["POST"])
+def api_danmaku_stress_run():
+    """接收 YAML 内容 → 保存临时文件 → 调用 stress_executor → SSE 流式返回进度"""
+    import tempfile, os, json, queue, threading
+    from framework.stress_executor import run_stress_suite
+
+    body = request.get_json(force=True) or {}
+    yaml_body = body.get("yaml_body", "")
+    if not yaml_body:
+        return jsonify({"success": False, "error": "yaml_body 为空"}), 400
+
+    # ── 预检验：写入临时文件后立即 yaml.safe_load 验证 ──
+    tmp = tempfile.NamedTemporaryFile(
+        mode="w", suffix=".yaml", delete=False,
+        dir=str(PROJECT_ROOT / "data"), encoding="utf-8"
+    )
+    tmp.write(yaml_body)
+    tmp_path = tmp.name
+    tmp.close()
+
+    import yaml as _yaml
+    _valid = False
+    with open(tmp_path, 'r', encoding='utf-8') as _f:
+        _content = _f.read()
+    try:
+        _parsed = _yaml.safe_load(_content)
+        if _parsed is None:
+            raise ValueError("YAML 为空")
+        _valid = True
+    except Exception as _ye:
+        first_lines = "\n".join(_content.split("\n")[:5])
+        _err_msg = f"YAML 解析失败: {_ye}\n\n文件前5行:\n{first_lines}"
+
+    run_id = uuid.uuid4().hex[:8]
+    cancel_ev = Event()
+    pause_ev = Event()
+    _active_stress_runs[run_id] = {"cancel": cancel_ev, "pause": pause_ev}
+    _q: queue.Queue = queue.Queue()
+    _summary = []
+    _start_t = time.time()
+
+    def _cb(progress):
+        _q.put(progress)
+
+    def _producer():
+        if not _valid:
+            _q.put({"error": _err_msg})
+            _q.put(None)
+            return
+        result = None
+        try:
+            result = run_stress_suite(tmp_path, callback=_cb,
+                                      cancel_event=cancel_ev,
+                                      pause_event=pause_ev)
+            _summary.extend(result.get('results', []))
+        except Exception as e:
+            _q.put({"error": str(e)})
+        finally:
+            # ── 企微通知 ──
+            if result and result.get('results'):
+                try:
+                    from utils.notify.wechat_send import WeChatSend
+                    from utils.other_tools.models import TestMetrics
+                    results = result['results']
+                    passed = sum(1 for r in results if r.get('pass'))
+                    total = len(results)
+                    elapsed_t = time.time() - _start_t
+                    lines = [
+                        "## 🚀 弹幕压测完成",
+                        f"> 通过：<font color=\"info\">{passed}/{total}</font>　耗时：{elapsed_t:.1f}s",
+                    ]
+                    for r in results:
+                        m = r.get('metrics', {})
+                        icon = "✅" if r.get('pass') else "❌"
+                        lines.append(
+                            f"{icon} {r.get('name','')}　并发:{r.get('concurrency','')}　"
+                            f"TPS:{m.get('tps','')}　P99:{m.get('p99','')}ms"
+                        )
+                    ws = WeChatSend(TestMetrics(0, 0, 0, 0, 0, 0, "0"))
+                    ws.send_markdown("\n".join(lines))
+                except Exception:
+                    pass
+            _q.put(None)
+
+    def event_stream():
+        t = threading.Thread(target=_producer, daemon=True)
+        t.start()
+        yield f"data: {json.dumps({'run_id': run_id}, ensure_ascii=False)}\n\n"
+        while True:
+            item = _q.get()
+
+            if item is None:
+                break
+            if "error" in item:
+                yield f"data: {json.dumps({'done': True, 'error': item['error']}, ensure_ascii=False)}\n\n"
+                break
+            yield f"data: {json.dumps(item, ensure_ascii=False)}\n\n"
+        _active_stress_runs.pop(run_id, None)
+        yield f"data: {json.dumps({'done': True, 'summary': _summary}, ensure_ascii=False)}\n\n"
+        try:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+        except Exception:
+            pass
+
+    try:
+        return Response(
+            event_stream(),
+            mimetype="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+        )
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"success": False, "error": f"压测异常: {e}"}), 500
 
 # ═══════════════════════════════════════════════════════════════
 # 弹幕长链接压测 - 执行
@@ -731,6 +879,9 @@ def api_danmaku_case_generate():
         for p in projects:
             name = p.get("endpoint_name") or p.get("project_name") or "接口" + str(p.get("id", ""))
             url = p.get("endpoint_url") or ""
+            # 自动补全缺失的 scheme
+            if url and not url.startswith(("http://", "https://")):
+                url = "https://" + url
             method = p.get("method") or "GET"
             headers_raw = p.get("headers") or ""
             body_content = p.get("body") or ""

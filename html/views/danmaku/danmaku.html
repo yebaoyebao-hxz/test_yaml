@@ -116,8 +116,8 @@
         <label style="font-size:12px;color:#666;display:flex;align-items:center;gap:4px;margin-right:auto;">
           <input type="checkbox" id="dm-cg-normalize"> 标准化断言
         </label>
-        <button class="btn btn-outline" id="dm-cg-smoke-btn" onclick="doDmCaseGenerate('smoke')" disabled title="请至少选择 2 个接口">生成冒烟用例</button>
-        <button class="btn btn-primary" id="dm-cg-stress-btn" onclick="doDmCaseGenerate('stress')">生成压测用例</button>
+        <button class="btn btn-outline" id="dm-cg-smoke-btn" onclick="doDmCaseGenerate('smoke')"  disabled title="请至少选择 2 个接口">冒烟用例</button>
+        <button class="btn btn-primary" id="dm-cg-stress-btn" onclick="doDmCaseGenerate('stress')">压测用例</button>
       </div>
     </div>
   </div>
@@ -139,7 +139,11 @@
       <div class="dm-cgyaml-footer">
         <button class="btn btn-primary" id="dm-cg-exec-btn" onclick="doDmCaseExecute()">
           <span class="spinner" id="dm-cg-exec-spinner" style="display:none;"></span>
-          <span id="dm-cg-exec-text">执行用例</span>
+          <span id="dm-cg-exec-text">▶️ 执行用例</span>
+        </button>
+        <button class="btn btn-warning" id="dm-cg-stressrun-btn" onclick="doDmStressRun()" style="display:none;">
+          <span class="spinner" id="dm-cg-stressrun-spinner" style="display:none;"></span>
+          <span id="dm-cg-stressrun-text">🚀 执行压测</span>
         </button>
         <button class="btn btn-outline" id="dm-cg-ai-btn" onclick="doDmCaseAiAssert()">
           <span class="spinner" id="dm-cg-ai-spinner" style="display:none;"></span>
@@ -159,6 +163,9 @@
       <span>运行窗口 <span id="dm-cgrun-title" style="font-size:12px;color:#888;"></span></span>
       <span style="flex:1"></span>
       <span id="dm-cgrun-status" class="dm-cgrun-status idle">空闲</span>
+      <button id="dm-cgrun-pause-btn" class="dm-cgrun-ctrl dm-pause hidden" onclick="doDmStressPause()" title="暂停">⏸ 暂停</button>
+      <button id="dm-cgrun-resume-btn" class="dm-cgrun-ctrl dm-resume hidden" onclick="doDmStressResume()" title="继续">▶ 继续</button>
+      <button id="dm-cgrun-stop-btn" class="dm-cgrun-ctrl dm-stop hidden" onclick="doDmStressStop()" title="终止">⏹ 终止</button>
       <button class="modal-close" onclick="closeDmCgRunModal()">x</button>
     </div>
     <div class="modal-body" style="padding:0;display:flex;flex-direction:column;max-height:calc(92vh - 100px);">

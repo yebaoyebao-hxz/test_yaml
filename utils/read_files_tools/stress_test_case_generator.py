@@ -52,10 +52,10 @@ case_common:
   dependence_case_data: {}
   assert:
     # 基础断言
-    code:
-      jsonpath: $.code
+    error_rate:
+      jsonpath: $._perf.error_rate
       type: ==
-      value: '0'
+      value: 0
       AssertType:
     # 性能核心断言
     avg_response_time:  # 平均响应时间
@@ -99,7 +99,7 @@ case_common:
 ### 压测参数规则
 - 基准压测：concurrency=10-50，duration=60，ramp_up=10
 - 峰值压测：concurrency=100-500，duration=300，ramp_up=30
-- 疲劳压测：concurrency=50-100，duration=3600，ramp_up=60
+- 疲劳压测：concurrency=50-100，duration=1800，ramp_up=60
 - 混合压测：concurrency=50→200→50，duration=600，ramp_up=20
 - 异常流量：concurrency=1000，duration=60，ramp_up=5
 
