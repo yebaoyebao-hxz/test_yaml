@@ -21,7 +21,7 @@ YAML 测试用例生成器 Web 后台 —— 主入口
   ├── routes_wsperf.py     ← /api/perf/ws (长链接压测)
   └── routes_static.py     ← /, /health, /report/<path>
 """
-import io, os, sys
+import io, os, sys, threading, asyncio
 # 确保项目根目录在路径中（支持 python web_server/main.py 方式启动）
 _project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _project_root not in sys.path:
@@ -37,7 +37,8 @@ from web_server.routes_db import db_bp
 from web_server.routes_danmaku import danmaku_bp
 from web_server.routes_static import static_bp
 from web_server.routes_wsperf import wsperf_bp
-
+from web_server.routes_devices import devices_bp
+from web_server.ws_device_screen_server import start_ws_server, WS_LISTEN_PORT
 
 def create_app():
     """工厂函数：创建并配置 Flask 应用"""
@@ -49,7 +50,26 @@ def create_app():
     app.register_blueprint(danmaku_bp)
     app.register_blueprint(static_bp)
     app.register_blueprint(wsperf_bp)
+    app.register_blueprint(devices_bp, url_prefix="/api/devices")
+
+    # 启动 WebSocket 投屏服务（独立线程，端口 8090）
+    _start_device_ws()
     return app
+
+_ws_started = False
+
+def _start_device_ws():
+    """启动设备投屏 WebSocket 服务（仅一次）"""
+    global _ws_started
+    if _ws_started:
+        return
+    _ws_started = True
+    def _run_ws():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        print(f"  🌐 设备投屏 WS 服务启动: ws://127.0.0.1:{WS_LISTEN_PORT}")
+        loop.run_until_complete(start_ws_server())
+    threading.Thread(target=_run_ws, daemon=True, name="ws-screen").start()
 
 
 def _kill_port(port):
@@ -81,16 +101,17 @@ if __name__ == "__main__":
 ╔══════════════════════════════════════════════╗
 ║   🐇 YAML 测试用例生成器 Web 后台               ║
 ║                                              ║
-║   本地访问: http://127.0.0.1:5000             ║
+║   本地访问（新）: http://127.0.0.1:5000         ║
+║         旧版:http://127.0.0.1:5000/legacy     ║
 ║   报告目录: http://127.0.0.1:5000/report/    ║
 ║   数据库:   history.db (SQLite)              ║
 ║                                              ║
-║   快捷键: Ctrl+Enter 快速生成                ║
+║   快捷键: Ctrl+Enter 快速生成                  ║
 ║   接口:   POST /api/generate                 ║
 ║           POST /api/batch                    ║
 ║           POST /api/execute                  ║
 ║           POST /api/ai_assert                ║
-║           POST /api/perf/ws  (长链接压测)    ║
+║           POST /api/perf/ws  (长链接压测)      ║
 ║           POST /api/smart-case/generate-*    ║
 ║           GET  /api/db/records               ║
 ║           GET  /health                       ║

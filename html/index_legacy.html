@@ -1,0 +1,3082 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<title>YAML 测试用例生成器</title>
+<link rel="stylesheet" href="./common/common.css">
+<link rel="stylesheet" href="./views/generate/generate.css">
+<link rel="stylesheet" href="./views/records/records.css">
+<link rel="stylesheet" href="./views/perf/perf.css">
+<link rel="stylesheet" href="./views/danmaku/danmaku.css">
+<link rel="stylesheet" href="./views/danmaku-ws/danmaku-ws.css">
+<link rel="stylesheet" href="./views/devices/devices.css">
+<link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
+<script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+<script src="https://unpkg.com/element-plus/dist/index.full.min.js"></script>
+<script src="https://unpkg.com/echarts@5/dist/echarts.min.js"></script>
+</head>
+<body>
+<div id="header-container"></div>
+<div id="page-tabs-container"></div>
+<div id="view-devices" class="view-section hidden"><div id="app-devices"></div></div>
+
+<script>
+// Module Loader -- wait for header.html + page-tabs.html, then load views and bind DOM events
+let _headerReady = false, _tabsReady = false;
+function _onDomReady() {
+  // 头/导航加载完成,各视图初始化已下放到对应 view 的 fetch 回调中
+}
+
+fetch('./common/header.html').then(r=>r.text()).then(html=>{
+  document.getElementById('header-container').innerHTML = html;
+  _headerReady = true; _onDomReady();
+});
+fetch('./common/page-tabs.html').then(r=>r.text()).then(html=>{
+  document.getElementById('page-tabs-container').innerHTML = html;
+  _tabsReady = true; _onDomReady();
+  const views = ['generate','records','perf','danmaku','danmaku-ws','devices'];
+  views.forEach(v => {
+    fetch('./views/'+v+'/'+v+'.html').then(r=>r.text()).then(h=>{
+      const el = document.getElementById('view-'+v);
+      if(el) { el.innerHTML = h; }
+      // 视图加载完成后才初始化（修复 tab 切换/图片上传不响应问题）
+      if (v === 'generate') { initGenerateView(); }
+    }).catch(e=>console.error('Load view '+v+' failed:',e));
+  });
+});
+
+// Application JavaScript
+
+// ── 状态 ──
+let activeTab = 'curl';
+let imageBase64 = null;
+let attachedImages = [];
+let currentResult = { summary: '', yaml: '', yaml_body: '', raw: '', model: '' };
+let history = [];
+let rawMode = false;
+let normalizeAsserts = false;
+
+// ── DOM 引用（header.html 加载完成后由 initGenerateView 赋值）──
+let uploadZone = null;
+let fileInput = null;
+let previewImg = null;
+let attachStrip = null;
+let attachAddBtn = null;
+let attachHint = null;
+let attachFileInput = null;
+
+function toggleNormalize() {
+  normalizeAsserts = document.getElementById('normalize-switch').checked;
+}
+
+// ── 视图初始化：header.html 加载完成后调用 ──
+function initGenerateView() {
+  // 获取 DOM 引用
+  uploadZone = document.getElementById('upload-zone');
+  fileInput = document.getElementById('file-input');
+  previewImg = document.getElementById('preview-img');
+  attachStrip = document.getElementById('attach-strip');
+  attachAddBtn = document.getElementById('attach-add-btn');
+  attachHint = document.getElementById('attach-hint');
+  attachFileInput = document.getElementById('attach-file-input');
+
+  // ── 标签切换 ──
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      activeTab = btn.dataset.tab;
+      ['curl','text','image'].forEach(t => {
+        const el = document.getElementById(t + '-group');
+        if (el) el.classList.toggle('hidden', t !== activeTab);
+      });
+    });
+  });
+
+  // ── 图片上传 ──
+  if (!uploadZone) return;  // not loaded yet
+  uploadZone.addEventListener('click', () => fileInput.click());
+  uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
+  uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
+  uploadZone.addEventListener('drop', e => {
+    e.preventDefault(); uploadZone.classList.remove('drag-over');
+    handleFile(e.dataTransfer.files[0]);
+  });
+  fileInput.addEventListener('change', e => { if (e.target.files[0]) handleFile(e.target.files[0]); });
+
+  // ── 通用截图附件管理 ──
+  if (attachAddBtn && attachFileInput) {
+    attachAddBtn.addEventListener('click', () => attachFileInput.click());
+    attachFileInput.addEventListener('change', e => {
+      [...e.target.files].forEach(f => addAttachedImage(f));
+      attachFileInput.value = '';
+    });
+  }
+
+  // ── 通用拖拽上传（input-card区域）──
+  const inputCard = document.querySelector('.input-card');
+  if (inputCard) {
+    inputCard.addEventListener('dragover', e => {
+      e.preventDefault();
+      if (attachStrip) attachStrip.style.background = '#f0f5ff';
+    });
+    inputCard.addEventListener('dragleave', () => {
+      if (attachStrip) attachStrip.style.background = '';
+    });
+    inputCard.addEventListener('drop', e => {
+      e.preventDefault();
+      if (attachStrip) attachStrip.style.background = '';
+      [...e.dataTransfer.files].forEach(f => {
+        if (f.type.startsWith('image/')) addAttachedImage(f);
+      });
+    });
+  }
+}
+
+function handleFile(file) {
+  if (!file || !file.type.startsWith('image/')) return showToast('请选择图片文件', 'err');
+  const reader = new FileReader();
+  reader.onload = () => {
+    imageBase64 = reader.result;
+    previewImg.src = reader.result;
+    uploadZone.classList.add('has-image');
+    addAttachedImageByData(reader.result);
+  };
+  reader.readAsDataURL(file);
+}
+
+// 图片tab的上传也走统一附件
+const origHandleFile = handleFile;
+handleFile = function(file) {
+  if (!file || !file.type.startsWith('image/')) return showToast('请选择图片文件', 'err');
+  const reader = new FileReader();
+  reader.onload = () => {
+    imageBase64 = reader.result;
+    previewImg.src = reader.result;
+    uploadZone.classList.add('has-image');
+    // 同时添加到通用附件
+    addAttachedImageByData(reader.result);
+  };
+  reader.readAsDataURL(file);
+};
+
+function addAttachedImage(file) {
+  const reader = new FileReader();
+  reader.onload = () => addAttachedImageByData(reader.result);
+  reader.readAsDataURL(file);
+}
+
+function addAttachedImageByData(dataUrl) {
+  if (attachedImages.includes(dataUrl)) return;
+  attachedImages.push(dataUrl);
+  renderAttachedImages();
+}
+
+function removeAttachedImage(idx) {
+  attachedImages.splice(idx, 1);
+  // 如果删除的是当前图片tab预览，同步清理
+  if (imageBase64 && !attachedImages.includes(imageBase64)) {
+    imageBase64 = null;
+    previewImg.src = '';
+    uploadZone.classList.remove('has-image');
+  }
+  renderAttachedImages();
+}
+
+function renderAttachedImages() {
+  attachStrip.innerHTML = '';
+  attachedImages.forEach((dataUrl, idx) => {
+    const thumb = document.createElement('div');
+    thumb.className = 'attach-thumb';
+    thumb.innerHTML = `<img src="${dataUrl}" alt="screenshot ${idx+1}"><div class="del-badge" data-idx="${idx}">&times;</div>`;
+    thumb.querySelector('.del-badge').addEventListener('click', (e) => {
+      e.stopPropagation();
+      removeAttachedImage(idx);
+    });
+    thumb.addEventListener('click', () => {
+      // 点击预览大图
+      const w = window.open('', '_blank');
+      w.document.write(`<html><body style="margin:0;display:flex;align-items:center;justify-content:center;background:#000;min-height:100vh;"><img src="${dataUrl}" style="max-width:100%;max-height:100vh;"></body></html>`);
+    });
+    attachStrip.appendChild(thumb);
+  });
+  attachStrip.appendChild(attachAddBtn);
+  attachStrip.appendChild(attachHint);
+  attachHint.style.display = attachedImages.length === 0 ? '' : 'none';
+}
+
+// 粘贴事件：支持 Ctrl+V 粘贴图片
+document.addEventListener('paste', (e) => {
+  const items = e.clipboardData?.items;
+  if (!items) return;
+  for (const item of items) {
+    if (item.type.startsWith('image/')) {
+      e.preventDefault();
+      const blob = item.getAsFile();
+      const reader = new FileReader();
+      reader.onload = () => addAttachedImageByData(reader.result);
+      reader.readAsDataURL(blob);
+      break; // 一次只处理一张
+    }
+  }
+});
+
+
+
+
+// ── 核心调用 ──
+async function doGenerate() {
+  const btn = document.getElementById('submit-btn');
+  const spinner = document.getElementById('spinner');
+  const submitText = document.getElementById('submit-text');
+  btn.disabled = true;
+  spinner.style.display = 'inline-block';
+  submitText.textContent = 'AI 生成中...';
+
+  let type, content;
+  if (activeTab === 'curl') {
+    type = 'curl';
+    content = document.getElementById('curl-input').value.trim();
+  } else if (activeTab === 'text') {
+    type = 'text';
+    content = document.getElementById('text-input').value.trim();
+  } else {
+    type = 'image';
+    content = imageBase64 || '';
+  }
+
+  // 合并通用附件中的截图
+  const allImages = [...attachedImages];
+  if (activeTab === 'image' && imageBase64 && !allImages.includes(imageBase64)) {
+    allImages.unshift(imageBase64);
+  }
+
+  if (!content && allImages.length === 0) {
+    showToast('请输入内容或附加截图', 'err');
+    resetBtn(); return;
+  }
+
+  // 如果只传了图片没传文本，自动切到 image 模式
+  if (!content && allImages.length > 0) {
+    type = 'image';
+    content = allImages[0] || '';
+  }
+
+  try {
+    const resp = await fetch('/api/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type,
+        content,
+        images: allImages.length > 0 ? allImages : undefined,
+        normalize_asserts: normalizeAsserts
+      }),
+    });
+    const data = await resp.json();
+
+    currentResult = {
+      summary: data.summary || '',
+      yaml: data.yaml_body || data.yaml || '',
+      raw: data.yaml || '',
+      model: data.model || '',
+    };
+
+    // 显示摘要
+    document.getElementById('summary-box').textContent = data.summary || '(无摘要)';
+    document.getElementById('model-tag').textContent = data.model || '';
+
+    // 显示 YAML
+    const yamlBox = document.getElementById('yaml-output');
+    const statusBadge = document.getElementById('status-badge');
+
+    if (data.success) {
+      yamlBox.value = rawMode ? (data.yaml || '') : (data.yaml_body || '');
+      yamlBox.readOnly = false;
+      statusBadge.innerHTML = '<span class="badge badge-success">✓ 生成成功</span>';
+    } else {
+      yamlBox.value = data.error || '未知错误';
+      yamlBox.readOnly = true;
+      statusBadge.innerHTML = '<span class="badge badge-error">✗ 生成失败</span>';
+    }
+
+    // 写入历史
+    addHistory(currentResult);
+  } catch (e) {
+    document.getElementById('yaml-output').value = '网络错误: ' + e.message;
+    document.getElementById('status-badge').innerHTML = '<span class="badge badge-error">✗ 网络错误</span>';
+  } finally {
+    resetBtn();
+  }
+}
+
+function resetBtn() {
+  const btn = document.getElementById('submit-btn');
+  const spinner = document.getElementById('spinner');
+  const submitText = document.getElementById('submit-text');
+  btn.disabled = false;
+  spinner.style.display = 'none';
+  submitText.textContent = '⚡ 生成 YAML';
+}
+
+// ── 工具函数 ──
+function copyYaml() {
+  const text = currentResult.yaml || currentResult.raw || '';
+  copyToClipboard(text, 'YAML 已复制');
+}
+
+function copySummary() {
+  copyToClipboard(currentResult.summary || '', '摘要已复制');
+}
+
+function downloadYaml() {
+  downloadFile(currentResult.yaml || currentResult.raw || '', 'test_case.yaml');
+}
+
+function downloadRawYaml() {
+  downloadFile(currentResult.raw || '', 'test_case_raw.txt');
+}
+
+function clearAll() {
+  document.getElementById('curl-input').value = '';
+  document.getElementById('text-input').value = '';
+  imageBase64 = null;
+  previewImg.src = '';
+  uploadZone.classList.remove('has-image');
+  attachedImages = [];
+  renderAttachedImages();
+  currentResult = { summary: '', yaml: '', yaml_body: '', raw: '', model: '' };
+  const yb = document.getElementById('yaml-output');
+  yb.value = '';
+  yb.readOnly = true;
+  document.getElementById('summary-box').textContent = '等待生成...';
+  document.getElementById('status-badge').innerHTML = '';
+  document.getElementById('model-tag').textContent = '';
+}
+
+function addHistory(result) {
+  history.unshift({ ...result, time: new Date().toLocaleString() });
+  if (history.length > 20) history.length = 20;
+  document.getElementById('history-count').textContent = history.length;
+}
+
+function toggleHistory() {
+  if (history.length === 0) { showToast('暂无历史记录', 'err'); return; }
+  const w = window.open('', '_blank', 'width=700,height=500');
+  w.document.write('<html><head><meta charset=utf-8><title>生成历史</title><style>body{font-family:monospace;padding:20px;background:#1e1e2e;color:#cdd6f4} .item{border-bottom:1px solid #333;padding:12px 0} .time{color:#585b70;font-size:12px} pre{white-space:pre-wrap;word-break:break-all;max-height:200px;overflow-y:auto}</style></head><body>');
+  w.document.write('<h2>📜 生成历史 (' + history.length + ')</h2>');
+  history.forEach((h, i) => {
+    w.document.write('<div class=item><div class=time>' + h.time + ' | ' + (h.model||'') + '</div>');
+    w.document.write('<div><b>摘要:</b> ' + (h.summary||'') + '</div>');
+    w.document.write('<pre>' + (h.raw||h.yaml||'') + '</pre></div>');
+  });
+  w.document.write('</body></html>');
+}
+
+function toggleRaw() {
+  rawMode = !rawMode;
+  const yamlBox = document.getElementById('yaml-output');
+  if (rawMode) {
+    yamlBox.value = currentResult.raw || '';
+    showToast('已切换为原文模式');
+  } else {
+    yamlBox.value = currentResult.yaml || '';
+    showToast('已切换为精简模式');
+  }
+}
+
+function copyToClipboard(text, msg) {
+  if (!text) { showToast('无内容可复制', 'err'); return; }
+  navigator.clipboard.writeText(text).then(() => showToast(msg || '已复制', 'ok')).catch(() => showToast('复制失败，请手动选择', 'err'));
+}
+
+function downloadFile(content, filename) {
+  if (!content) { showToast('无内容可下载', 'err'); return; }
+  const blob = new Blob([content], { type: 'text/yaml;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+// 安全包装器 - 防止 ReferenceError 时页面崩溃
+function _safeToast(msg, type) {
+  const toast = document.getElementById("toast");
+  toast.className = `toast toast-${type} show`;
+  toast.textContent = msg;
+  setTimeout(()=>toast.classList.remove("show"),2000);
+}
+
+function showToast(msg, type) {
+  try {
+    const t = document.getElementById('toast');
+    if (!t) { console.error('[toast] element not found:', msg); return; }
+    t.textContent = msg;
+    t.className = 'toast toast-' + (type === 'ok' ? 'ok' : 'err') + ' show';
+    setTimeout(() => { try { t.classList.remove('show'); } catch(_){} }, 2000);
+  } catch(e) {
+    console.error('[toast] render failed:', e.message, msg);
+  }
+}
+
+// ── 快捷键 ──
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); doGenerate(); }
+});
+
+// ── 执行用例 ──
+async function doExecute() {
+  const yb = document.getElementById('yaml-output');
+  const yamlBody = yb.value.trim();
+  if (!yamlBody) {
+    showToast('请先生成 YAML 用例', 'err'); return;
+  }
+  const btn = document.getElementById('execute-btn');
+  const spinner = document.getElementById('exec-spinner');
+  btn.disabled = true;
+  spinner.style.display = 'inline-block';
+  setConsole('<span class="c-info">⏳ 正在保存 YAML → 生成测试文件 → 执行用例...</span>');
+
+  // 从摘要提取文件名
+  const summary = currentResult.summary || 'auto_case';
+  const filename = summary.replace(/[\\/:*?"<>|]/g, '').substring(0, 30) || 'auto_yaml_case';
+
+  try {
+    const resp = await fetch('/api/execute', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        yaml_body: yamlBody,
+        filename: filename,
+        input_type: activeTab,
+        input_content: getInputContent(),
+        summary: currentResult.summary,
+        model: currentResult.model,
+      }),
+    });
+    const data = await resp.json();
+
+    if (data.success) {
+      const reportLink = data.report_url
+        ? `<br><a href="${data.report_url}" target="_blank" style="color:#1890ff;">📊 打开 Allure 报告 →</a>`
+        : '';
+      const stdoutText = data.stdout || '';
+      const stderrText = data.stderr || '';
+      let html = `<span class="c-ok">✅ 执行完成 (返回码: ${data.pytest_rc})</span>\n`;
+      html += `<span class="c-dim">YAML: ${data.yaml_file} | 测试: ${data.test_file}</span>\n`;
+      if (data.report_url) html += `<a href="${data.report_url}" target="_blank" style="color:#1890ff;">📊 打开 Allure 报告 →</a>\n`;
+      html += `\n<span style="color:#fff;font-weight:600;">── stdout ──</span>\n`;
+      html += `<span class="c-dim">${escapeHtml(stdoutText || '(空)')}</span>\n`;
+      if (stderrText) {
+        html += `\n<span class="c-warn">── stderr ──</span>\n`;
+        html += `<span class="c-warn">${escapeHtml(stderrText)}</span>\n`;
+      }
+      html += reportLink;
+      setConsole(html);
+      showToast('用例执行完成', 'ok');
+      loadDbCount();
+    } else {
+      let html = `<span class="c-err">❌ 执行失败</span>\n`;
+      html += `<span class="c-err">${escapeHtml(data.error || '未知错误')}</span>\n`;
+      if (data.stderr) html += `<span class="c-warn">${escapeHtml(data.stderr)}</span>\n`;
+      setConsole(html);
+      showToast('执行失败: ' + (data.error || '未知错误'), 'err');
+    }
+  } catch (e) {
+    setConsole(`<span class="c-err">❌ 网络错误: ${escapeHtml(e.message)}</span>`);
+    showToast('网络错误', 'err');
+  } finally {
+    btn.disabled = false;
+    spinner.style.display = 'none';
+  }
+}
+
+async function doAiAssert() {
+  const yamlBody = document.getElementById('yaml-output').value.trim();
+  if (!yamlBody) {
+    showToast('请先生成 YAML 用例', 'err'); return;
+  }
+  const btn = document.getElementById('ai-assert-btn');
+  const spinner = document.getElementById('ai-spinner');
+  btn.disabled = true;
+  spinner.style.display = 'inline-block';
+  setConsole('<span class="c-info">⏳ AI 正在分析响应结果...</span>');
+
+  try {
+    const resp = await fetch('/api/ai_assert', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ yaml_body: yamlBody, normalize_asserts: normalizeAsserts }),
+    });
+    const data = await resp.json();
+
+    if (data.results) {
+      const ok = data.status === '通过';
+      const icon = ok ? '✅' : '❌';
+      let html = `<span class="${ok ? 'c-ok' : 'c-err'}" style="font-size:14px;font-weight:600;">${icon} AI断言结果: ${escapeHtml(data.summary || '')}</span>\n`;
+      html += '<hr class="c-hr">\n';
+      data.results.forEach(r => {
+        const ok2 = r.status === '通过';
+        const i2 = ok2 ? '✅' : r.status === '错误' ? '⚠️' : '❌';
+        const cls = ok2 ? 'c-ok' : 'c-err';
+        html += `<span class="${cls}">${i2} <b>${escapeHtml(r.case_id)}</b> — HTTP ${r.response_code || '-'}</span>\n`;
+        html += `<span class="c-dim">  断言: ${escapeHtml(r.assert_desc || '-')}</span>\n`;
+        html += `<span>  💡 ${escapeHtml(r.reason)}</span>\n`;
+      });
+      setConsole(html);
+      showToast('AI断言完成: ' + (data.summary || ''), ok ? 'ok' : 'err');
+    } else {
+      setConsole(`<span class="c-err">❌ ${escapeHtml(data.error || 'AI断言失败')}</span>`);
+      showToast('AI断言失败', 'err');
+    }
+  } catch (e) {
+    setConsole(`<span class="c-err">❌ 网络错误: ${escapeHtml(e.message)}</span>`);
+    showToast('网络错误', 'err');
+  } finally {
+    btn.disabled = false;
+    spinner.style.display = 'none';
+  }
+}
+
+function getInputContent() {
+  if (activeTab === 'curl') return document.getElementById('curl-input').value.trim();
+  if (activeTab === 'text') return document.getElementById('text-input').value.trim();
+  return '';
+}
+
+// ── 数据库配置 ──
+async function loadDbConfig() {
+  try {
+    const resp = await fetch('/api/db/config');
+    const data = await resp.json();
+    if (data.db_path) document.getElementById('db-path').value = data.db_path;
+  } catch (e) { /* ignore */ }
+}
+
+async function loadDbCount() {
+  try {
+    const resp = await fetch('/api/db/records?limit=1');
+    const data = await resp.json();
+    document.getElementById('db-count').textContent = data.count ? `(${data.count} 条记录)` : '';
+  } catch (e) { /* ignore */ }
+}
+
+async function setDbPath() {
+  const path = document.getElementById('db-path').value.trim();
+  if (!path) { showToast('请输入数据库路径', 'err'); return; }
+  try {
+    const resp = await fetch('/api/db/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ db_path: path }),
+    });
+    const data = await resp.json();
+    if (data.success) { showToast('数据库路径已更新', 'ok'); loadDbCount(); }
+    else { showToast('设置失败: ' + (data.error || ''), 'err'); }
+  } catch (e) { showToast('网络错误', 'err'); }
+}
+
+// ── 页签切换 ──
+function switchPage(page) {
+  // 设备管理页不再特殊处理，与其他页面共用顶栏+页签
+  document.getElementById('header-container').classList.remove('devices-active');
+  document.getElementById('page-tabs-container').classList.remove('devices-active');
+  document.querySelectorAll('.page-tab').forEach(b => {
+    b.classList.toggle('active', b.dataset.page === page);
+  });
+  document.getElementById('view-generate').classList.toggle('hidden', page !== 'generate');
+  document.getElementById('view-records').classList.toggle('hidden', page !== 'records');
+  document.getElementById('view-perf').classList.toggle('hidden', page !== 'perf');
+  document.getElementById('view-danmaku').classList.toggle('hidden', page !== 'danmaku');
+  document.getElementById('view-danmaku-ws').classList.toggle('hidden', page !== 'danmaku-ws');
+  document.getElementById('view-devices').classList.toggle('hidden', page !== 'devices');
+  if (page === 'records') loadRecords();
+  if (page === 'danmaku') loadDanmakuProjects();
+  if (page === 'danmaku-ws') loadDanmakuWsProjects();
+  if (page === 'devices'){ initDevicesView(); }
+}
+
+let allRecords = [];
+
+async function loadRecords() {
+  const empty = document.getElementById('records-empty');
+  const table = document.getElementById('records-table');
+  const tbody = document.getElementById('records-tbody');
+  const countEl = document.getElementById('records-count');
+  empty.style.display = ''; empty.textContent = '加载中...';
+  table.style.display = 'none';
+  try {
+    const resp = await fetch('/api/db/records?limit=200');
+    const data = await resp.json();
+    if (!data.success) { empty.textContent = '查询失败'; return; }
+    allRecords = data.records || [];
+    countEl.textContent = '共 ' + allRecords.length + ' 条';
+    filterRecords();
+  } catch (e) {
+    empty.textContent = '加载异常: ' + e.message;
+  }
+}
+
+function filterRecords() {
+  const kw = (document.getElementById('records-search')?.value || '').toLowerCase();
+  const empty = document.getElementById('records-empty');
+  const table = document.getElementById('records-table');
+  const tbody = document.getElementById('records-tbody');
+  const filtered = kw ? allRecords.filter(r =>
+    (r.filename||'').toLowerCase().includes(kw) ||
+    (r.summary||'').toLowerCase().includes(kw) ||
+    (r.input_type||'').toLowerCase().includes(kw)
+  ) : allRecords;
+  if (filtered.length === 0) {
+    empty.style.display = ''; empty.textContent = kw ? '无匹配记录' : '暂无记录';
+    table.style.display = 'none';
+    return;
+  }
+  empty.style.display = 'none';
+  table.style.display = '';
+  tbody.innerHTML = filtered.map(r => {
+    const execDone = r.exec_status && r.exec_status !== 'generated';
+    const execTag = execDone
+      ? '<span class="tag-exec-ok">' + escapeHtml(r.exec_status) + '</span>'
+      : '<span class="tag-exec-no">未执行</span>';
+    const reExecDisabled = !r.yaml_body ? 'disabled' : '';
+    const reExecTitle = reExecDisabled ? 'title="无YAML内容,无法执行"' : (execDone ? 'title="重新执行此用例"' : 'title="执行此用例"');
+    const summary = (r.summary || '').substring(0, 50);
+    const kept = r.keep_flag === 1 || r.keep_flag === '1' || r.keep_flag === true;
+    const keepChecked = kept ? 'checked' : '';
+    const hasReport = r.report_id && r.report_path;
+    const filenameTitle = '点击查看 YAML 用例' + (hasReport ? ' + Allure 报告' : '');
+    return '<tr>' +
+      '<td>' + r.id + '</td>' +
+      '<td><div class="cell-wrap cell-filename" title="' + escapeHtml(filenameTitle) + '" onclick="showRecordDetail(' + r.id + ')">' + escapeHtml(r.filename||'-') + '</div></td>' +
+      '<td>' + escapeHtml(r.input_type||'-') + '</td>' +
+      '<td><div class="cell-summary" title="' + escapeHtml(r.summary||'') + '">' + escapeHtml(summary||'-') + '</div></td>' +
+      '<td>' + execTag + '</td>' +
+      '<td><label class="keep-toggle" title="切换保存状态" onclick="event.stopPropagation();toggleKeepFlag(' + r.id + ', this)">' +
+        '<input type="checkbox" ' + keepChecked + '><span class="keep-track"></span></label></td>' +
+      '<td style="font-size:12px;color:#888;white-space:nowrap;">' + (r.created_at||'-') + '</td>' +
+      '<td class="cell-actions"><button ' + reExecDisabled + ' ' + reExecTitle + ' onclick="reExecute(' + r.id + ')">🔄 再次执行</button></td>' +
+    '</tr>';
+  }).join('');
+}
+
+// ── keep_flag 切换 ──
+async function toggleKeepFlag(id, labelEl) {
+  const cb = labelEl.querySelector('input');
+  const wasChecked = cb.checked;
+  // 先回退，等接口返回再确定
+  cb.checked = !wasChecked;
+  try {
+    const resp = await fetch('/api/db/records/' + id + '/keep-flag', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    const data = await resp.json();
+    if (data.success) {
+      cb.checked = data.keep_flag === 1;
+      // 同步更新 allRecords
+      const rec = allRecords.find(r => r.id === id);
+      if (rec) rec.keep_flag = data.keep_flag;
+      showToast(data.keep_flag ? '已保存' : '已取消保存', 'ok');
+    } else {
+      cb.checked = wasChecked;
+      showToast('操作失败: ' + (data.error || ''), 'err');
+    }
+  } catch (e) {
+    cb.checked = wasChecked;
+    showToast('网络错误: ' + e.message, 'err');
+  }
+}
+
+// ── 记录详情弹窗 ──
+function showRecordDetail(id) {
+  const rec = allRecords.find(r => r.id === id);
+  if (!rec) { showToast('记录不存在', 'err'); return; }
+
+  document.getElementById('modal-title').textContent = '#' + id + ' ' + (rec.filename || '用例详情');
+  document.getElementById('modal-yaml').value = rec.yaml_body || '(无 YAML 内容)';
+
+  // Allure 报告
+  const iframe = document.getElementById('modal-report-iframe');
+  const empty = document.getElementById('modal-report-empty');
+  if (rec.report_id && rec.report_path) {
+    // report_path 可能是绝对路径或相对路径，尝试构造 URL
+    let reportUrl = '/report/index.html';
+    // 如果 report_path 里有路径信息，直接用
+    if (rec.report_path) {
+      // 默认 Allure 报告都输出到 /report/
+      reportUrl = '/report/index.html';
+    }
+    iframe.src = reportUrl;
+    iframe.style.display = '';
+    empty.style.display = 'none';
+  } else {
+    iframe.style.display = 'none';
+    empty.style.display = '';
+    empty.textContent = '暂无 Allure 报告\n（用例尚未执行或执行失败）';
+  }
+
+  document.getElementById('record-modal').classList.remove('hidden');
+}
+
+function closeRecordModal() {
+  document.getElementById('record-modal').classList.add('hidden');
+  // 清空 iframe 避免后台加载
+  document.getElementById('modal-report-iframe').src = '';
+}
+
+// 点击遮罩关闭
+document.addEventListener('click', function(e) {
+  const modal = document.getElementById('record-modal');
+  if (e.target === modal) closeRecordModal();
+});
+
+// ESC 关闭
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') {
+    const modal = document.getElementById('record-modal');
+    if (!modal.classList.contains('hidden')) closeRecordModal();
+  }
+});
+
+async function reExecute(id) {
+  const record = allRecords.find(r => r.id === id);
+  if (!record || !record.yaml_body) { showToast('无 YAML 内容，无法执行', 'err'); return; }
+
+  // 切到生成页
+  switchPage('generate');
+
+  // 填充输入区（根据原始输入类型）
+  const inputType = record.input_type || 'curl';
+  activeTab = ['curl', 'text', 'image'].includes(inputType) ? inputType : 'curl';
+  if (activeTab === 'curl') {
+    document.getElementById('curl-input').value = record.input_content || '';
+  } else if (activeTab === 'text') {
+    document.getElementById('text-input').value = record.input_content || '';
+  }
+  // 同步 generate 页的标签按钮和输入面板
+  document.querySelectorAll('#view-generate .tab-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.tab === activeTab);
+  });
+  ['curl', 'text', 'image'].forEach(t => {
+    const el = document.getElementById(t + '-group');
+    if (el) el.classList.toggle('hidden', t !== activeTab);
+  });
+
+  // 填 YAML
+  document.getElementById('yaml-output').value = record.yaml_body;
+
+  // 设 currentResult 供 doExecute 使用
+  currentResult = {
+    summary: record.summary || record.filename || 're_exec_' + id,
+    yaml: record.yaml_body,
+    yaml_body: record.yaml_body,
+    raw: record.yaml_body,
+    model: record.model || ''
+  };
+
+  // 拉起控制台执行
+  doExecute();
+}
+
+// ── 性能测试 ──
+let perfAbort = false;
+let perfMode = 'http';  // 'http' or 'ws'
+let wsSockets = [];     // 活跃的 WebSocket 连接池
+
+function switchPerfMode(mode) {
+  perfMode = mode;
+  document.querySelectorAll('.mode-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+
+  const isWs = mode === 'ws';
+  // HTTP 专属
+  document.querySelectorAll('#view-perf .http-only').forEach(el => {
+    el.style.display = isWs ? 'none' : '';
+  });
+  // WebSocket 专属
+  document.querySelectorAll('#view-perf .ws-only').forEach(el => {
+    el.classList.toggle('show', isWs);
+  });
+
+  // 标签文案切换
+  document.getElementById('perf-body-label').textContent = isWs ? '消息体（每条连接发送的消息）' : 'Body（POST/PUT/PATCH 时使用）';
+  document.getElementById('perf-concurrency-label').textContent = isWs ? '并发连接数' : '并发数';
+  document.getElementById('perf-total-label').textContent = isWs ? '每连接消息数' : '总请求';
+  document.getElementById('perf-run-label').textContent = isWs ? '🔌 开始长链接压测' : '🚀 开始压测';
+  document.getElementById('perf-metric-l1').textContent = isWs ? '总消息' : '总请求';
+  document.getElementById('perf-metric-l2').textContent = isWs ? '发送成功' : '成功';
+  document.getElementById('perf-metric-l3').textContent = isWs ? '发送失败' : '失败';
+  document.getElementById('perf-metric-l4').textContent = isWs ? '消息吞吐' : 'TPS';
+  document.getElementById('perf-tps-unit').textContent = isWs ? ' msg/s' : ' req/s';
+  document.getElementById('perf-latency-title-suffix').textContent = isWs ? '(消息往返 RTT)' : '';
+
+  // WebSocket 连接指标面板
+  document.getElementById('ws-conn-metrics').style.display = isWs ? '' : 'none';
+
+  // URL placeholder
+  document.getElementById('perf-url').placeholder = isWs
+    ? 'ws://192.168.1.47:94/game/ws/xxx?token=...'
+    : 'https://api.example.com/endpoint';
+
+  // 重置结果
+  resetPerfResults();
+}
+
+function resetPerfResults() {
+  ['perf-total-req','perf-ok','perf-err'].forEach(id => { document.getElementById(id).textContent = '-'; });
+  document.getElementById('perf-tps').innerHTML = '-<span class="unit" id="perf-tps-unit"> req/s</span>';
+  ['perf-avg','perf-p50','perf-p90','perf-p95','perf-p99','perf-min','perf-max'].forEach(id => { document.getElementById(id).textContent = '- ms'; });
+  ['ws-conn-total','ws-conn-ok','ws-conn-err'].forEach(id => { document.getElementById(id).textContent = '-'; });
+  document.getElementById('ws-conn-avg').innerHTML = '-<span class="unit"> ms</span>';
+  document.getElementById('perf-status').textContent = '';
+}
+
+function addPerfHeader() {
+  const list = document.getElementById('perf-headers');
+  const div = document.createElement('div');
+  div.className = 'perf-header-item';
+  div.innerHTML = '<input placeholder="Key"><input placeholder="Value"><button class="btn-remove" onclick="removePerfHeader(this)">×</button>';
+  list.appendChild(div);
+}
+
+function removePerfHeader(btn) {
+  btn.parentElement.remove();
+}
+
+function getPerfHeaders() {
+  const h = {};
+  document.querySelectorAll('#perf-headers .perf-header-item').forEach(row => {
+    const inputs = row.querySelectorAll('input');
+    if (inputs[0].value.trim()) h[inputs[0].value.trim()] = inputs[1].value;
+  });
+  return h;
+}
+
+async function doPerfTest() {
+  if (perfMode === 'ws') {
+    doWsPerfTest(); return;
+  }
+  const url = document.getElementById('perf-url').value.trim();
+  if (!url) { showToast('请输入目标 URL', 'err'); return; }
+
+  const method = document.getElementById('perf-method').value;
+  const concurrency = parseInt(document.getElementById('perf-concurrency').value);
+  const total = parseInt(document.getElementById('perf-total').value);
+  const headers = getPerfHeaders();
+  const bodyStr = document.getElementById('perf-body').value.trim();
+
+  const runBtn = document.getElementById('perf-run-btn');
+  const stopBtn = document.getElementById('perf-stop-btn');
+  const spinner = document.getElementById('perf-spinner');
+  const progDiv = document.getElementById('perf-progress');
+  const progBar = document.getElementById('perf-progress-bar');
+
+  perfAbort = false;
+  runBtn.disabled = true;
+  spinner.style.display = 'inline-block';
+  stopBtn.style.display = 'inline-block';
+  progDiv.style.display = '';
+  progBar.style.width = '0%';
+  document.getElementById('perf-status').textContent = '运行中...';
+
+  // Reset results
+  ['perf-total-req','perf-ok','perf-err','perf-tps','perf-avg','perf-p50','perf-p90','perf-p95','perf-p99','perf-min','perf-max'].forEach(id => {
+    document.getElementById(id).textContent = id.startsWith('perf-t') ? '-' : '- ms';
+  });
+  // Reset TPS unit
+  document.getElementById('perf-tps').innerHTML = '-<span class="unit"> req/s</span>';
+
+  const latencies = [];
+  let completed = 0, success = 0, failed = 0;
+  const startTime = performance.now();
+
+  // Build fetch options
+  const fetchOpts = { method, headers };
+  if (['POST','PUT','PATCH'].includes(method) && bodyStr) {
+    fetchOpts.body = bodyStr;
+  }
+
+  const tasks = [];
+  let idx = 0;
+
+  async function worker() {
+    while (!perfAbort) {
+      const i = idx++;
+      if (i >= total) break;
+      const t0 = performance.now();
+      try {
+        const resp = await fetch(url, fetchOpts);
+        const ms = Math.round(performance.now() - t0);
+        latencies.push(ms);
+        if (resp.ok) success++; else failed++;
+      } catch (e) {
+        latencies.push(Math.round(performance.now() - t0));
+        failed++;
+      }
+      completed++;
+      const pct = Math.round(completed / total * 100);
+      progBar.style.width = pct + '%';
+      // Update live metrics
+      const elapsed = (performance.now() - startTime) / 1000;
+      document.getElementById('perf-total-req').textContent = completed;
+      document.getElementById('perf-ok').textContent = success;
+      document.getElementById('perf-err').textContent = failed;
+      document.getElementById('perf-tps').innerHTML = (elapsed > 0 ? (completed / elapsed).toFixed(1) : '0') + '<span class="unit"> req/s</span>';
+    }
+  }
+
+  for (let w = 0; w < concurrency; w++) tasks.push(worker());
+  await Promise.all(tasks);
+
+  const elapsed = (performance.now() - startTime) / 1000;
+  // Calculate percentiles
+  if (latencies.length > 0) latencies.sort((a, b) => a - b);
+  const p = (pct) => latencies.length > 0 ? latencies[Math.min(Math.floor(latencies.length * pct / 100), latencies.length - 1)] : 0;
+  const avg = latencies.length > 0 ? Math.round(latencies.reduce((a, b) => a + b, 0) / latencies.length) : 0;
+
+  document.getElementById('perf-total-req').textContent = completed;
+  document.getElementById('perf-ok').textContent = success;
+  document.getElementById('perf-err').textContent = failed;
+  document.getElementById('perf-tps').innerHTML = (elapsed > 0 ? (completed / elapsed).toFixed(1) : '0') + '<span class="unit"> req/s</span>';
+  document.getElementById('perf-avg').textContent = avg + ' ms';
+  document.getElementById('perf-p50').textContent = p(50) + ' ms';
+  document.getElementById('perf-p90').textContent = p(90) + ' ms';
+  document.getElementById('perf-p95').textContent = p(95) + ' ms';
+  document.getElementById('perf-p99').textContent = p(99) + ' ms';
+  document.getElementById('perf-min').textContent = (latencies.length > 0 ? latencies[0] : '-') + ' ms';
+  document.getElementById('perf-max').textContent = (latencies.length > 0 ? latencies[latencies.length - 1] : '-') + ' ms';
+
+  document.getElementById('perf-status').textContent = perfAbort ? '已停止' : '完成';
+  progBar.style.width = '100%';
+  runBtn.disabled = false;
+  spinner.style.display = 'none';
+  stopBtn.style.display = 'none';
+}
+
+// ── WebSocket 长链接压测（纯客户端）──
+async function doWsPerfTest() {
+  const url = document.getElementById('perf-url').value.trim();
+  if (!url) { showToast('请输入 WebSocket URL', 'err'); return; }
+  if (!url.startsWith('ws://') && !url.startsWith('wss://')) {
+    showToast('WebSocket URL 必须以 ws:// 或 wss:// 开头', 'err'); return;
+  }
+
+  const concurrency = parseInt(document.getElementById('perf-concurrency').value);
+  const msgsPerConn = parseInt(document.getElementById('perf-total').value);
+  const timeoutSec = parseInt(document.getElementById('ws-timeout').value) || 10;
+  const pingInterval = parseInt(document.getElementById('ws-ping-interval').value) || 0;
+  const bodyStr = document.getElementById('perf-body').value.trim();
+
+  const runBtn = document.getElementById('perf-run-btn');
+  const stopBtn = document.getElementById('perf-stop-btn');
+  const spinner = document.getElementById('perf-spinner');
+  const progDiv = document.getElementById('perf-progress');
+  const progBar = document.getElementById('perf-progress-bar');
+
+  perfAbort = false;
+  wsSockets = [];
+  runBtn.disabled = true;
+  spinner.style.display = 'inline-block';
+  stopBtn.style.display = 'inline-block';
+  progDiv.style.display = '';
+  progBar.style.width = '0%';
+  document.getElementById('perf-status').textContent = '连接中...';
+  resetPerfResults();
+
+  const msgLatencies = [];   // 消息 RTT (ms)
+  const connLatencies = [];  // 连接耗时 (ms)
+  let connSuccess = 0, connFailed = 0;
+  let msgSent = 0, msgOk = 0, msgFailed = 0;
+  const totalMessages = concurrency * msgsPerConn;
+  const startTime = performance.now();
+
+  function updateLiveMetrics() {
+    const elapsed = (performance.now() - startTime) / 1000;
+    document.getElementById('perf-total-req').textContent = msgSent;
+    document.getElementById('perf-ok').textContent = msgOk;
+    document.getElementById('perf-err').textContent = msgFailed;
+    document.getElementById('perf-tps').innerHTML = (elapsed > 0 ? (msgSent / elapsed).toFixed(1) : '0') + '<span class="unit"> msg/s</span>';
+    document.getElementById('ws-conn-total').textContent = concurrency;
+    document.getElementById('ws-conn-ok').textContent = connSuccess;
+    document.getElementById('ws-conn-err').textContent = connFailed;
+    if (connLatencies.length > 0) {
+      const avgConn = Math.round(connLatencies.reduce((a,b)=>a+b,0) / connLatencies.length);
+      document.getElementById('ws-conn-avg').innerHTML = avgConn + '<span class="unit"> ms</span>';
+    }
+    if (msgSent > 0) {
+      const pct = Math.round(msgSent / totalMessages * 100);
+      progBar.style.width = pct + '%';
+    }
+  }
+
+  // 使用 Array 控制并发连接建立
+  const promises = [];
+  for (let c = 0; c < concurrency; c++) {
+    promises.push((async () => {
+      let ws = null;
+      let pingTimer = null;
+      try {
+        // 建立连接（带超时）
+        const connT0 = performance.now();
+        ws = new WebSocket(url);
+        await new Promise((resolve, reject) => {
+          const timer = setTimeout(() => {
+            if (ws.readyState !== WebSocket.OPEN) {
+              ws.close();
+              reject(new Error('连接超时 (' + timeoutSec + 's)'));
+            }
+          }, timeoutSec * 1000);
+          ws.onopen = () => {
+            clearTimeout(timer);
+            const connMs = Math.round(performance.now() - connT0);
+            connLatencies.push(connMs);
+            connSuccess++;
+            resolve();
+          };
+          ws.onerror = () => {
+            clearTimeout(timer);
+            reject(new Error('连接错误'));
+          };
+        });
+
+        wsSockets.push(ws);
+        updateLiveMetrics();
+
+        // 心跳
+        if (pingInterval > 0 && bodyStr) {
+          pingTimer = setInterval(() => {
+            if (ws.readyState === WebSocket.OPEN) {
+              try { ws.send(bodyStr); } catch(e) {}
+            }
+          }, pingInterval * 1000);
+        }
+
+        // 发送消息 & 测量 RTT
+        const pendingRTT = new Map();
+
+        ws.onmessage = (e) => {
+          const now = performance.now();
+          // 尝试匹配请求-响应（用序列号）
+          msgOk++;
+          try {
+            const data = JSON.parse(e.data);
+            if (data._seq !== undefined && pendingRTT.has(data._seq)) {
+              const t0 = pendingRTT.get(data._seq);
+              msgLatencies.push(Math.round(now - t0));
+              pendingRTT.delete(data._seq);
+            }
+          } catch (_) {
+            // 非 JSON 消息，记录收到时间
+          }
+          updateLiveMetrics();
+        };
+
+        ws.onclose = () => {
+          if (pingTimer) clearInterval(pingTimer);
+        };
+
+        ws.onerror = () => {
+          if (pingTimer) clearInterval(pingTimer);
+        };
+
+        // 逐条发送消息
+        for (let m = 0; m < msgsPerConn && !perfAbort; m++) {
+          if (ws.readyState !== WebSocket.OPEN) break;
+          const seq = c * 10000 + m;
+          let payload;
+          if (bodyStr) {
+            try {
+              const obj = JSON.parse(bodyStr);
+              obj._seq = seq;
+              payload = JSON.stringify(obj);
+            } catch (_) {
+              payload = bodyStr;
+            }
+          } else {
+            payload = JSON.stringify({ _seq: seq, ts: Date.now() });
+          }
+
+          const t0 = performance.now();
+          pendingRTT.set(seq, t0);
+          try {
+            ws.send(payload);
+            msgSent++;
+          } catch (e) {
+            msgFailed++;
+            pendingRTT.delete(seq);
+          }
+          updateLiveMetrics();
+
+          // 小延迟避免粘包
+          if (m < msgsPerConn - 1) {
+            await new Promise(r => setTimeout(r, 1));
+          }
+        }
+
+        // 等待收尾消息（最多 3 秒）
+        if (!perfAbort && pendingRTT.size > 0) {
+          await new Promise(r => setTimeout(r, 3000));
+          // 未收到回复的计入失败
+          msgFailed += pendingRTT.size;
+          pendingRTT.clear();
+          updateLiveMetrics();
+        }
+
+      } catch (e) {
+        connFailed++;
+        updateLiveMetrics();
+      } finally {
+        if (pingTimer) clearInterval(pingTimer);
+        // 不主动关闭连接，让用户观察长链接状态
+      }
+    })());
+  }
+
+  await Promise.all(promises);
+
+  // 收尾统计
+  const elapsed = (performance.now() - startTime) / 1000;
+  if (msgLatencies.length > 0) msgLatencies.sort((a, b) => a - b);
+  const p = (pct) => msgLatencies.length > 0 ? msgLatencies[Math.min(Math.floor(msgLatencies.length * pct / 100), msgLatencies.length - 1)] : 0;
+  const avg = msgLatencies.length > 0 ? Math.round(msgLatencies.reduce((a, b) => a + b, 0) / msgLatencies.length) : 0;
+
+  document.getElementById('perf-total-req').textContent = msgSent;
+  document.getElementById('perf-ok').textContent = msgOk;
+  document.getElementById('perf-err').textContent = msgFailed;
+  document.getElementById('perf-tps').innerHTML = (elapsed > 0 ? (msgSent / elapsed).toFixed(1) : '0') + '<span class="unit"> msg/s</span>';
+  document.getElementById('ws-conn-total').textContent = concurrency;
+  document.getElementById('ws-conn-ok').textContent = connSuccess;
+  document.getElementById('ws-conn-err').textContent = connFailed;
+  if (connLatencies.length > 0) {
+    document.getElementById('ws-conn-avg').innerHTML = Math.round(connLatencies.reduce((a,b)=>a+b,0) / connLatencies.length) + '<span class="unit"> ms</span>';
+  }
+  document.getElementById('perf-avg').textContent = avg + ' ms';
+  document.getElementById('perf-p50').textContent = p(50) + ' ms';
+  document.getElementById('perf-p90').textContent = p(90) + ' ms';
+  document.getElementById('perf-p95').textContent = p(95) + ' ms';
+  document.getElementById('perf-p99').textContent = p(99) + ' ms';
+  document.getElementById('perf-min').textContent = (msgLatencies.length > 0 ? msgLatencies[0] : '-') + ' ms';
+  document.getElementById('perf-max').textContent = (msgLatencies.length > 0 ? msgLatencies[msgLatencies.length - 1] : '-') + ' ms';
+
+  document.getElementById('perf-status').textContent = perfAbort ? '已停止' : '完成';
+  progBar.style.width = '100%';
+  runBtn.disabled = false;
+  spinner.style.display = 'none';
+  stopBtn.style.display = 'none';
+}
+
+function stopPerfTest() {
+  perfAbort = true;
+  // 关闭所有 WebSocket 连接
+  wsSockets.forEach(ws => { try { ws.close(); } catch(e) {} });
+  wsSockets = [];
+  document.getElementById('perf-stop-btn').disabled = true;
+  document.getElementById('perf-status').textContent = '停止中...';
+}
+
+// ── 弹幕项目管理 ──
+let dmAllItems = [];
+let dmActiveCat = '';
+let dmEditingId = null;
+let dmConsoleShown = true;
+
+function dmConsoleLog(type, msg, detail) {
+  const el = document.getElementById('dm-global-console');
+  el.style.display = dmConsoleShown ? '' : 'none';
+  const log = document.getElementById('dm-console-log');
+  if (!dmConsoleShown) return;
+  const t = new Date().toLocaleTimeString();
+  const colors = { ok: '#27ae60', err: '#e74c3c', info: '#3498db', warn: '#e67e22', req: '#9b59b6' };
+  const icons = { ok: '✅', err: '❌', info: 'ℹ️', warn: '⚠️', req: '📤' };
+  const color = colors[type] || '#ccc';
+  const icon = icons[type] || '➜';
+  let html = `<div style="margin-bottom:4px;"><span style="color:#666;">${t}</span> <span style="color:${color};">${icon} ${escapeHtml(msg)}</span>`;
+  if (detail) html += `<div style="color:#999;margin:2px 0 0 16px;white-space:pre-wrap;word-break:break-all;">${escapeHtml(detail)}</div>`;
+  html += `</div>`;
+  log.innerHTML += html;
+  log.scrollTop = log.scrollHeight;
+  // 限制 200 条
+  const lines = log.children;
+  while (lines.length > 200) lines[0].remove();
+}
+
+function dmToggleConsole() {
+  dmConsoleShown = !dmConsoleShown;
+  document.getElementById('dm-global-console').style.display = dmConsoleShown ? '' : 'none';
+}
+let dmViewMode = false;
+
+async function loadDanmakuProjects() {
+  document.getElementById('dm-project-list').innerHTML = '<div class="dm-empty">加载中...</div>';
+  try {
+    const resp = await fetch('/api/danmaku/projects');
+    const data = await resp.json();
+    if (!data.success) { showToast('加载失败: ' + data.error, 'err'); return; }
+    dmAllItems = data.items || [];
+    renderDmCategories();
+    renderDmProjects();
+  } catch (e) { showToast('加载异常: ' + e.message, 'err'); }
+}
+
+function renderDmCategories() {
+  const cats = [...new Set(dmAllItems.map(r => r.project_category || '默认'))];
+  const container = document.getElementById('dm-cat-tabs');
+  container.innerHTML = '<button class="dm-cat-btn active" onclick="filterDmCategory(\'\')">全部</button>' +
+    cats.map(c => '<button class="dm-cat-btn" onclick="filterDmCategory(\'' + escapeHtml(c) + '\')">' + escapeHtml(c) + '</button>').join('');
+  // 更新新增表单的分类下拉
+  const sel = document.getElementById('dm-category');
+  sel.innerHTML = cats.map(c => '<option>' + escapeHtml(c) + '</option>').join('') || '<option>默认</option>';
+}
+
+function filterDmCategory(cat) {
+  dmActiveCat = cat;
+  document.querySelectorAll('.dm-cat-btn').forEach(b => b.classList.toggle('active', b.textContent === (cat || '全部')));
+  renderDmProjects();
+}
+
+function renderDmProjects() {
+  const list = document.getElementById('dm-project-list');
+  const filtered = dmActiveCat ? dmAllItems.filter(r => (r.project_category || '默认') === dmActiveCat) : dmAllItems;
+  document.getElementById('dm-count').textContent = '共 ' + filtered.length + ' 个';
+  if (filtered.length === 0) {
+    list.innerHTML = '<div class="dm-empty">暂无项目</div>';
+    return;
+  }
+  list.innerHTML = filtered.map(r => {
+    const method = r.method || 'GET';
+    const cat = r.project_category || '默认';
+    return '<div class="dm-project-card">' +
+      '<div class="dm-pname">' + escapeHtml(r.project_name) + '</div>' +
+      '<div class="dm-ename">' + escapeHtml(r.endpoint_name) + '</div>' +
+      '<div class="dm-url" title="' + escapeHtml(r.endpoint_url) + '">' + escapeHtml(r.endpoint_url) + '</div>' +
+      '<div class="dm-meta">' +
+        '<span class="dm-method dm-method-' + method + '">' + method + '</span>' +
+        '<span style="font-size:10px;color:#aaa;">' + escapeHtml(cat) + '</span>' +
+        '<span style="font-size:10px;color:#aaa;margin-left:auto;">' + (r.created_at || '') + '</span>' +
+      '</div>' +
+      '<div class="dm-actions">' +
+        '<button onclick="event.stopPropagation();viewDmProject(' + r.id + ')">📋 查看</button>' +
+        '<button onclick="event.stopPropagation();runDmPerfFor(' + r.id + ', \'' + escapeHtml(r.endpoint_name) + '\')">⚡ 压测</button>' +
+        '<button onclick="event.stopPropagation();editDmProject(' + r.id + ')">✏ 编辑</button>' +
+        '<button onclick="event.stopPropagation();deleteDmProject(' + r.id + ')" style="color:#ff4d4f;">🗑 删除</button>' +
+      '</div></div>';
+  }).join('');
+}
+
+function showDmForm() {
+  dmEditingId = null;
+  dmViewMode = false;
+  document.getElementById('dm-form-title').textContent = '📝 新增弹幕项目';
+  document.getElementById('dm-edit-id').value = '';
+  document.getElementById('dm-project-name').value = '';
+  document.getElementById('dm-endpoint-name').value = '';
+  document.getElementById('dm-url').value = '';
+  document.getElementById('dm-method').value = 'GET';
+  document.getElementById('dm-body').value = '';
+  document.getElementById('dm-new-cat').value = '';
+  document.getElementById('dm-headers').innerHTML = '<div class="perf-header-item"><input placeholder="Key" value="User-Agent"><input placeholder="Value" value="UnityPlayer/2023.1.13f1 (UnityWebRequest/1.0, libcurl/8.1.1-DEV)"><button class="btn-remove" onclick="removePerfHeader(this)">×</button></div>' +
+    '<div class="perf-header-item"><input placeholder="Key" value="X-Unity-Version"><input placeholder="Value" value="2023.1.13f1"><button class="btn-remove" onclick="removePerfHeader(this)">×</button></div>';
+  document.getElementById('dm-save-btn').textContent = '💾 保存';
+  document.getElementById('dm-save-btn').style.display = '';
+  document.getElementById('dm-save-btn').onclick = saveDmProject;
+  document.getElementById('dm-cancel-btn').style.display = 'none';
+  document.getElementById('dm-perf-card').style.display = 'none';
+  _setDmFormDisabled(false);
+}
+
+function editDmProject(id) {
+  const item = dmAllItems.find(r => r.id === id);
+  if (!item) return;
+  dmEditingId = id;
+  dmViewMode = false;
+  _setDmFormDisabled(false);
+  document.getElementById('dm-form-title').textContent = '✏ 编辑弹幕项目 (#' + id + ')';
+  document.getElementById('dm-edit-id').value = id;
+  document.getElementById('dm-project-name').value = item.project_name || '';
+  document.getElementById('dm-endpoint-name').value = item.endpoint_name || '';
+  document.getElementById('dm-url').value = item.endpoint_url || '';
+  document.getElementById('dm-method').value = item.method || 'GET';
+  document.getElementById('dm-body').value = item.body || '';
+  document.getElementById('dm-new-cat').value = '';
+  // Headers
+  let headers = item.headers;
+  if (typeof headers === 'string') { try { headers = JSON.parse(headers); } catch(e) { headers = {}; } }
+  if (headers && typeof headers === 'object' && Object.keys(headers).length > 0) {
+    document.getElementById('dm-headers').innerHTML = Object.entries(headers).map(([k, v]) =>
+      '<div class="perf-header-item"><input placeholder="Key" value="' + escapeHtml(k) + '"><input placeholder="Value" value="' + escapeHtml(v) + '"><button class="btn-remove" onclick="removePerfHeader(this)">×</button></div>'
+    ).join('');
+  } else {
+    document.getElementById('dm-headers').innerHTML = '<div class="perf-header-item"><input placeholder="Key"><input placeholder="Value"><button class="btn-remove" onclick="removePerfHeader(this)">×</button></div>';
+  }
+  document.getElementById('dm-save-btn').textContent = '💾 更新';
+  document.getElementById('dm-save-btn').onclick = saveDmProject;
+  document.getElementById('dm-cancel-btn').style.display = 'inline-block';
+  document.getElementById('dm-perf-card').style.display = 'none';
+}
+
+function cancelDmEdit() { showDmForm(); }
+
+function viewDmProject(id) {
+  const item = dmAllItems.find(r => r.id === id);
+  if (!item) return;
+  dmViewMode = true;
+  dmEditingId = null;
+
+  document.getElementById('dm-form-title').textContent = '🔒 查看接口详情 (#' + id + ')';
+  document.getElementById('dm-edit-id').value = '';
+  document.getElementById('dm-project-name').value = item.project_name || '';
+  document.getElementById('dm-endpoint-name').value = item.endpoint_name || '';
+  document.getElementById('dm-url').value = item.endpoint_url || '';
+  document.getElementById('dm-method').value = item.method || 'GET';
+  document.getElementById('dm-body').value = item.body || '';
+  document.getElementById('dm-new-cat').value = '';
+
+  let headers = item.headers;
+  if (typeof headers === 'string') { try { headers = JSON.parse(headers); } catch(e) { headers = {}; } }
+  if (headers && typeof headers === 'object' && Object.keys(headers).length > 0) {
+    document.getElementById('dm-headers').innerHTML = Object.entries(headers).map(([k, v]) =>
+      '<div class="perf-header-item"><input placeholder="Key" value="' + escapeHtml(k) + '"><input placeholder="Value" value="' + escapeHtml(v) + '"><span style="display:none;"></span></div>'
+    ).join('');
+  } else {
+    document.getElementById('dm-headers').innerHTML = '<div class="perf-header-item"><input placeholder="Key" value="-"><input placeholder="Value" value="-"><span style="display:none;"></span></div>';
+  }
+
+  // 全部只读
+  _setDmFormDisabled(true);
+  document.getElementById('dm-save-btn').style.display = '';
+  document.getElementById('dm-save-btn').textContent = '🔓 切换到编辑';
+  document.getElementById('dm-save-btn').onclick = function() { editDmProject(id); };
+  document.getElementById('dm-cancel-btn').textContent = '✕ 关闭';
+  document.getElementById('dm-cancel-btn').style.display = 'inline-block';
+  document.getElementById('dm-perf-card').style.display = 'none';
+}
+
+function _setDmFormDisabled(disabled) {
+  ['dm-project-name','dm-endpoint-name','dm-url','dm-method','dm-body','dm-new-cat'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = disabled;
+  });
+  // Headers 内的 input 和按钮
+  document.querySelectorAll('#dm-headers input').forEach(inp => inp.disabled = disabled);
+  document.querySelectorAll('#dm-headers .btn-remove').forEach(b => { b.style.display = disabled ? 'none' : ''; });
+  // + 添加 Header 按钮
+  const addBtn = document.querySelector('#dm-form-title')?.closest('.card')?.querySelector('.btn-outline');
+  if (addBtn) addBtn.style.display = disabled ? 'none' : '';
+}
+
+function addDmHeader() {
+  const list = document.getElementById('dm-headers');
+  const div = document.createElement('div');
+  div.className = 'perf-header-item';
+  div.innerHTML = '<input placeholder="Key"><input placeholder="Value"><button class="btn-remove" onclick="removePerfHeader(this)">×</button>';
+  list.appendChild(div);
+}
+
+function getDmHeaders() {
+  const h = {};
+  document.querySelectorAll('#dm-headers .perf-header-item').forEach(row => {
+    const inputs = row.querySelectorAll('input');
+    if (inputs[0].value.trim()) h[inputs[0].value.trim()] = inputs[1].value;
+  });
+  return h;
+}
+
+async function saveDmProject() {
+  if (dmViewMode) return;  // 只读模式不保存
+  const project_name = document.getElementById('dm-project-name').value.trim();
+  const endpoint_name = document.getElementById('dm-endpoint-name').value.trim();
+  const endpoint_url = document.getElementById('dm-url').value.trim();
+  if (!project_name) { showToast('请输入项目名称', 'err'); return; }
+  if (!endpoint_name) { showToast('请输入接口名称', 'err'); return; }
+  if (!endpoint_url) { showToast('请输入接口地址', 'err'); return; }
+
+  const newCat = document.getElementById('dm-new-cat').value.trim();
+  const category = newCat || document.getElementById('dm-category').value || '默认';
+  const body = {
+    project_name, endpoint_name, endpoint_url,
+    project_category: category,
+    method: document.getElementById('dm-method').value,
+    headers: getDmHeaders(),
+    body: document.getElementById('dm-body').value.trim()
+  };
+
+  const id = dmEditingId;
+  const url = id ? '/api/danmaku/projects/' + id : '/api/danmaku/projects';
+  const method = id ? 'PUT' : 'POST';
+
+  try {
+    const resp = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const data = await resp.json();
+    if (data.success) {
+      showToast(id ? '已更新' : '已保存');
+      showDmForm();
+      await loadDanmakuProjects();
+    } else {
+      showToast(data.error || '保存失败', 'err');
+    }
+  } catch (e) { showToast('保存异常: ' + e.message, 'err'); }
+}
+
+async function deleteDmProject(id) {
+  if (!confirm('确定删除该项目？')) return;
+  try {
+    const resp = await fetch('/api/danmaku/projects/' + id, { method: 'DELETE' });
+    const data = await resp.json();
+    if (data.success) { showToast('已删除'); await loadDanmakuProjects(); }
+    else { showToast(data.error || '删除失败', 'err'); }
+  } catch (e) { showToast('删除异常: ' + e.message, 'err'); }
+}
+
+function runDmPerfFor(id, name) {
+  dmCurrentPerfId = id;
+  document.getElementById('dm-perf-name').textContent = name;
+  document.getElementById('dm-perf-card').style.display = '';
+  // Reset
+  ['dm-total','dm-ok','dm-err','dm-avg','dm-p50','dm-p90','dm-p95','dm-p99','dm-min','dm-max'].forEach(id => {
+    document.getElementById(id).textContent = id.startsWith('dm-t') ? '-' : '- ms';
+  });
+  document.getElementById('dm-tps').innerHTML = '-<span class="unit"> req/s</span>';
+  document.getElementById('dm-perf-progress').style.display = 'none';
+  document.getElementById('dm-error-log-box').hidden = true;
+}
+
+let dmCurrentPerfId = null;
+
+async function runDmPerf() {
+  if (!dmCurrentPerfId) return;
+  const concurrency = parseInt(document.getElementById('dm-perf-concurrency').value);
+  const total = parseInt(document.getElementById('dm-perf-total').value);
+  const runBtn = document.getElementById('dm-perf-run-btn');
+  const progDiv = document.getElementById('dm-perf-progress');
+  const progBar = document.getElementById('dm-perf-progress-bar');
+
+  runBtn.disabled = true; runBtn.textContent = '⏳ 压测中...';
+  progDiv.style.display = ''; progBar.style.width = '0%';
+
+  // Simulate progress
+  const progressTimer = setInterval(() => {
+    const w = parseFloat(progBar.style.width) || 0;
+    if (w < 90) progBar.style.width = (w + 3) + '%';
+  }, 200);
+
+  try {
+    const resp = await fetch('/api/danmaku/perf/' + dmCurrentPerfId, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ concurrency, total_req: total })
+    });
+    clearInterval(progressTimer);
+    const data = await resp.json();
+    progBar.style.width = '100%';
+    if (data.success) {
+      document.getElementById('dm-total').textContent = data.completed;
+      document.getElementById('dm-ok').textContent = data.ok;
+      document.getElementById('dm-err').textContent = data.errors;
+      document.getElementById('dm-tps').innerHTML = data.tps + '<span class="unit"> req/s</span>';
+      const l = data.latency || {};
+      document.getElementById('dm-avg').textContent = l.avg + ' ms';
+      document.getElementById('dm-p50').textContent = l.p50 + ' ms';
+      document.getElementById('dm-p90').textContent = l.p90 + ' ms';
+      document.getElementById('dm-p95').textContent = l.p95 + ' ms';
+      document.getElementById('dm-p99').textContent = l.p99 + ' ms';
+      document.getElementById('dm-min').textContent = l.min + ' ms';
+      document.getElementById('dm-max').textContent = l.max + ' ms';
+      // 错误日志
+      const elogs = data.error_logs || [];
+      const logBox = document.getElementById('dm-error-log-box');
+      const logDiv = document.getElementById('dm-error-log');
+      if (elogs.length > 0) {
+        logBox.hidden = false;
+        logDiv.innerHTML = elogs.map(e => {
+          const head = e.status === 0
+            ? `<span style="color:#e74c3c;">#${e.idx} \u274c \u5f02\u5e38</span>`
+            : `<span style="color:#e67e22;">#${e.idx} HTTP ${e.status}</span>`;
+          const detail = e.error
+            ? `<div style="color:#e74c3c;margin-top:2px;">${escapeHtml(e.error)}</div>`
+            : (e.body ? `<div style="color:#999;margin-top:2px;">${escapeHtml(e.body)}</div>` : '');
+          return `<div style="margin-bottom:6px;padding-bottom:6px;border-bottom:1px solid #333;">${head}${detail}</div>`;
+        }).join('');
+      } else {
+        logBox.hidden = true;
+      }
+    } else {
+      showToast(data.error || '压测失败', 'err');
+    }
+  } catch (e) { clearInterval(progressTimer); showToast('压测异常: ' + e.message, 'err'); }
+  runBtn.disabled = false; runBtn.textContent = '🚀 开始压测';
+}
+
+// ── 弹幕长链接压测 ──
+let dmWsAllItems = [];
+let dmWsActiveCat = '';
+let dmWsEditingId = null;
+let dmWsViewMode = false;
+let dmWsCurrentPerfId = null;
+
+async function loadDanmakuWsProjects() {
+  document.getElementById('dmws-project-list').innerHTML = '<div class="dm-empty">加载中...</div>';
+  try {
+    const resp = await fetch('/api/danmaku/ws-projects');
+    const data = await resp.json();
+    if (!data.success) { showToast('加载WS项目失败: ' + data.error, 'err'); return; }
+    dmWsAllItems = data.items || [];
+    renderDmWsCategories();
+    renderDmWsProjects();
+  } catch (e) { showToast('加载WS项目异常: ' + e.message, 'err'); }
+}
+
+
+// ══════ 弹幕用例生成（Dashboard → 选接口 → AI 生成 YAML → 执行/AI断言） ══════
+let dmCgAll = [];
+let dmCgSelected = new Set();
+let dmCgMode = '';
+let dmCgYaml = '';
+let dmCgSummary = '';
+let dmCgNormalize = false;
+
+function parseDmCgHeaders(raw) {
+  if (!raw) return {};
+  try {
+    if (typeof raw === 'object') return raw;
+    return JSON.parse(raw);
+  } catch (_) {
+    const h = {};
+    String(raw).split(/[\n,]/).forEach(s => {
+      const p = s.trim(); if (!p) return;
+      const i = p.indexOf(':');
+      if (i > 0) h[p.slice(0, i).trim()] = p.slice(i + 1).trim();
+      else h[s.trim()] = '';
+    });
+    return h;
+  }
+}
+
+function dmCgRenderCat(containerId, cats) {
+  const el = document.getElementById(containerId);
+  if (!cats || cats.length <= 1) { el.innerHTML = ''; return; }
+  el.innerHTML = cats.map(c =>
+    `<button class="btn btn-sm btn-outline" style="padding:2px 10px;font-size:12px;" onclick="dmCgSetCat('${(c||'').replace(/'/g, "\\'")}')">${c||'未分类'}</button>`
+  ).join('');
+}
+
+async function showDmCaseGenModal() {
+  dmCgAll = []; dmCgSelected = new Set(); dmCgMode = ''; dmCgYaml = ''; dmCgSummary = ''; dmCgNormalize = false;
+  document.getElementById('dm-cg-normalize').checked = false;
+  document.getElementById('dm-cg-count').textContent = '已选 0 / 共 0';
+  document.getElementById('dm-cg-smoke-btn').disabled = true;
+  document.getElementById('dm-cg-list').innerHTML = '<div class="dm-empty">加载中...</div>';
+  document.getElementById('dm-cg-cats').innerHTML = '';
+  document.getElementById('dm-casegen-modal').classList.remove('hidden');
+  // 加载接口列表
+  try {
+    const r = await fetch('/api/danmaku/projects');
+    const d = await r.json();
+    dmCgAll = (d.items || []).filter(p => p.endpoint_url && p.endpoint_url.trim());
+    // 分类
+    const catSet = new Set();
+    dmCgAll.forEach(p => { const c = (p.endpoint_category || p.category || '').trim(); if (c) catSet.add(c); });
+    dmCgRenderCat('dm-cg-cats', [...catSet]);
+    dmCgRenderList();
+  } catch (e) { document.getElementById('dm-cg-list').innerHTML = '<div class="dm-empty" style="color:#ff4d4f;">加载失败: ' + e.message + '</div>'; }
+}
+
+function closeDmCaseGenModal() { document.getElementById('dm-casegen-modal').classList.add('hidden'); }
+
+function dmCgSetCat(cat) {
+  const filtered = cat ? dmCgAll.filter(p => (p.endpoint_category || p.category || '').trim() === cat) : dmCgAll;
+  dmCgRenderList(filtered);
+}
+
+function dmCgSelectAll(val) {
+  const list = document.getElementById('dm-cg-list');
+  const cbs = list.querySelectorAll('input[type="checkbox"]');
+  cbs.forEach(cb => { cb.checked = val; if (val) dmCgSelected.add(Number(cb.dataset.id)); else dmCgSelected.delete(Number(cb.dataset.id)); });
+  dmCgUpdateCount();
+}
+
+function dmCgToggle(id, checked) {
+  if (checked) dmCgSelected.add(id); else dmCgSelected.delete(id);
+  dmCgUpdateCount();
+}
+
+function dmCgUpdateCount() {
+  const total = dmCgAll.length;
+  const sel = dmCgSelected.size;
+  document.getElementById('dm-cg-count').textContent = '已选 ' + sel + ' / 共 ' + total;
+  const smokeBtn = document.getElementById('dm-cg-smoke-btn');
+  smokeBtn.disabled = sel < 2;
+  if (sel >= 2) {
+    smokeBtn.classList.remove('btn-outline');
+    smokeBtn.classList.add('btn-success');
+  } else {
+    smokeBtn.classList.remove('btn-success');
+    smokeBtn.classList.add('btn-outline');
+  }
+}
+
+function dmCgRenderList(filtered) {
+  const items = filtered || dmCgAll;
+  const el = document.getElementById('dm-cg-list');
+  if (!items.length) { el.innerHTML = '<div class="dm-empty">暂无接口</div>'; return; }
+  el.innerHTML = items.map(p => {
+    const id = p.id;
+    const name = p.endpoint_name || p.project_name || '接口' + id;
+    const url = p.endpoint_url || p.url || '';
+    const method = (p.method || 'GET').substring(0, 6);
+    const category = p.endpoint_category || p.category || '';
+    const checked = dmCgSelected.has(id) ? ' checked' : '';
+    const cls = dmCgSelected.has(id) ? ' selected' : '';
+    return '<div class="dm-cg-item ' + cls + '" data-id="' + id + '" onclick="var cb=this.querySelector(' + "'input'" + ');cb.checked=' + String(!dmCgSelected.has(id)) + ';dmCgToggle(' + id + ',cb.checked);event.stopPropagation();"><input type="checkbox" data-id="' + id + '"' + checked + ' onclick="event.stopPropagation();" onchange="dmCgToggle(' + id + ',this.checked)"><div class="dm-cg-body"><div class="dm-cg-name">' + (name||'???') + '</div><div class="dm-cg-url">' + (method ? method + ' ' : '') + (url||'???') + '</div><div class="dm-cg-meta"><span>' + (category||'未分类') + '</span></div></div></div>';
+  }).join('');
+  dmCgUpdateCount();
+}
+
+async function doDmCaseGenerate(mode) {
+  dmCgMode = mode;
+  dmCgNormalize = document.getElementById('dm-cg-normalize').checked;
+  const btn = document.getElementById(mode === 'smoke' ? 'dm-cg-smoke-btn' : 'dm-cg-stress-btn');
+  btn.disabled = true;
+  btn.textContent = '⏳ 生成中...';
+  try {
+    const r = await fetch('/api/danmaku/case/generate', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: [...dmCgSelected], mode, normalize_assert: dmCgNormalize }),
+    });
+    const d = await r.json();
+    if (!d.success) { showToast('生成失败: ' + (d.error||'?'), 'err'); return; }
+    dmCgYaml = d.yaml || '';
+    dmCgSummary = d.summary || ('danmaku_' + mode);
+    document.getElementById('dm-cgyaml-text').value = dmCgYaml;
+    document.getElementById('dm-cgyaml-tag').textContent = d.count ? (' ' + d.count + ' 接口 · ' + mode.toUpperCase()) : (' ' + mode.toUpperCase());
+    document.getElementById('dm-cgyaml-status').textContent = '生成成功' + (d.model ? ' (' + d.model + ')' : '');
+    document.getElementById('dm-cgyaml-status').className = 'dm-cgyaml-status ok';
+    showDmCgYamlModal();
+    closeDmCaseGenModal();
+  } catch (e) { showToast('生成异常: ' + e.message, 'err'); }
+  finally {
+    btn.disabled = false;
+    btn.textContent = mode === 'smoke' ? '🌫️ 冒烟用例' : '🔥 压测用例';
+  }
+}
+
+function showDmCgYamlModal() {
+  const m = document.getElementById('dm-cgyaml-modal');
+  m.classList.remove('hidden');
+  // 只有 YAML 含 stress_type 才显示"执行压测"按钮
+  setTimeout(() => {
+    const y = document.getElementById('dm-cgyaml-text').value;
+    const btn = document.getElementById('dm-cg-stressrun-btn');
+    if (btn) btn.style.display = y.includes('stress_type') ? '' : 'none';
+  }, 50);
+}
+function closeDmCgYamlModal() { document.getElementById('dm-cgyaml-modal').classList.add('hidden'); }
+
+function dmCgCopyYaml() {
+  const t = document.getElementById('dm-cgyaml-text');
+  t.select(); document.execCommand('copy');
+  showToast('✓ YAML 已复制到剪贴板', 'ok');
+}
+function dmCgDownloadYaml() {
+  const blob = new Blob([dmCgYaml], {type:'text/yaml;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = dmCgSummary.replace(/[^a-zA-Z0-9\u4e00-\u9fff_-]/g,'_') + '.yaml';
+  a.click(); URL.revokeObjectURL(a.href);
+}
+
+async function doDmCaseExecute() {
+  yamlBody = document.getElementById('dm-cgyaml-text').value || dmCgYaml;
+  if (!yamlBody) { showToast('YAML 为空', 'err'); return; }
+  dmCgYaml = yamlBody;
+  const exBtn = document.getElementById('dm-cg-exec-btn'); exBtn.disabled = true;
+  document.getElementById('dm-cg-exec-spinner').style.display = '';
+  document.getElementById('dm-cg-exec-text').textContent = '执行中...';
+  openDmCgRunModal();
+  const logEl = document.getElementById('dm-cgrun-log');
+  logEl.textContent = '正在保存 YAML 并启动 pytest...\n';
+  try {
+    const r = await fetch('/api/danmaku/case/run', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ yaml_body: yamlBody, summary: dmCgSummary, model: 'danmaku_' + dmCgMode }),
+    });
+    const d = await r.json();
+    if (d.success) {
+      logEl.textContent += (d.stdout || '') + '\n' + (d.stderr || '') + '\n';
+      logEl.textContent += '\n' + (d.pytest_rc === 0 ? '✅ 所有用例通过' : '❌ 有失败用例 (exit ' + d.pytest_rc + ')') + '\n';
+      if (d.report_url) {
+        logEl.textContent += 'Allure 报告: ' + d.report_url + '\n';
+        document.getElementById('dm-cgrun-iframe').src = d.report_url + '?t=' + Date.now();
+      }
+      setDmCgRunStatus(d.pytest_rc === 0 ? 'ok' : 'err');
+      updateDmCgRunStatusSpan(d.pytest_rc === 0 ? '✅ 通过' : '❌ 失败');
+    } else {
+      logEl.textContent += '执行失败: ' + (d.error || '未知错误') + '\n';
+      setDmCgRunStatus('err'); updateDmCgRunStatusSpan('❌ 失败');
+    }
+  } catch (e) {
+    logEl.textContent += '请求异常: ' + e.message + '\n';
+    setDmCgRunStatus('err'); updateDmCgRunStatusSpan('❌ 异常');
+  }
+  exBtn.disabled = false;
+  document.getElementById('dm-cg-exec-spinner').style.display = 'none';
+  document.getElementById('dm-cg-exec-text').textContent = '▶️ 执行用例';
+}
+
+async function doDmCaseAiAssert() {
+  const yamlBody = document.getElementById('dm-cgyaml-text').value || dmCgYaml;
+  if (!yamlBody) { showToast('YAML 为空', 'err'); return; }
+  dmCgYaml = yamlBody;
+  // 关闭 YAML 弹窗，拉起运行窗口
+  document.getElementById('dm-cgyaml-modal').classList.add('hidden');
+  openDmCgRunModal();
+  const logEl = document.getElementById('dm-cgrun-log');
+  const statusEl = document.getElementById('dm-cgyaml-status');
+  const aiBtn = document.getElementById('dm-cg-ai-btn');
+  aiBtn.disabled = true;
+  document.getElementById('dm-cg-ai-spinner').style.display = '';
+  document.getElementById('dm-cg-ai-text').textContent = '断言中...';
+  logEl.textContent = '>>> AI 断言任务启动\n';
+  logEl.textContent += '>>> 发送 YAML 到 /api/danmaku/case/ai-assert，等待 AI 响应...\n\n';
+  try {
+    const r = await fetch('/api/danmaku/case/ai-assert', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ yaml_body: yamlBody, normalize_asserts: dmCgNormalize }),
+    });
+    const d = await r.json();
+    if (d.success) {
+      dmCgYaml = d.yaml || yamlBody;
+      // 把新 YAML 写回隐藏的 textarea（用户重新打开 yaml 弹窗时能看到）
+      document.getElementById('dm-cgyaml-text').value = dmCgYaml;
+      if (statusEl) { statusEl.textContent = 'AI 断言生成成功'; statusEl.className = 'dm-cgyaml-status ok'; }
+      const lines = (d.log || '').split('\n');
+      logEl.textContent += '✓ AI 断言生成成功\n';
+      logEl.textContent += '  生成模式: ' + (d.mode || dmCgMode) + '\n';
+      logEl.textContent += '  解析行数: ' + (d.assertions_count || lines.length) + '\n';
+      logEl.textContent += '  耗时: ' + (d.elapsed || '?') + 's\n\n';
+      logEl.textContent += '--- AI 原始输出 ---\n' + (d.log || '(无)') + '\n';
+      logEl.textContent += '\n--- 新 YAML（已写入）---\n' + dmCgYaml + '\n';
+      logEl.textContent += '\n>>> 已自动关闭运行窗口。打开【关闭】旁的「YAML 预览」可查看/编辑新断言。\n';
+      setDmCgRunStatus('ok');
+      updateDmCgRunStatusSpan('✅ 断言完成');
+      // 重新拉起 YAML 弹窗（用户能立即看到效果）
+      setTimeout(() => {
+        document.getElementById('dm-cgyaml-modal').classList.remove('hidden');
+        document.getElementById('dm-cgrun-modal').classList.add('hidden');
+        // 标记: 让用户知道 YAML 已更新
+        const oldHtml = document.querySelector('.modal-overlay:not(.hidden) .modal-header');
+        showToast('✓ AI 断言已写入 YAML', 'ok');
+      }, 800);
+    } else {
+      const errMsg = d.error || '未知错误';
+      if (statusEl) { statusEl.textContent = '断言失败: ' + errMsg; statusEl.className = 'dm-cgyaml-status err'; }
+      logEl.textContent += '✗ AI 断言失败\n';
+      logEl.textContent += '  错误: ' + errMsg + '\n';
+      if (d.log) logEl.textContent += '\n--- AI 输出 ---\n' + d.log + '\n';
+      if (d.traceback) logEl.textContent += '\n--- 堆栈 ---\n' + d.traceback + '\n';
+      setDmCgRunStatus('err');
+      updateDmCgRunStatusSpan('❌ 失败');
+      showToast('AI 断言失败', 'err');
+    }
+  } catch (e) {
+    if (statusEl) { statusEl.textContent = '请求异常: ' + e.message; statusEl.className = 'dm-cgyaml-status err'; }
+    logEl.textContent += '✗ 请求异常: ' + e.message + '\n';
+    setDmCgRunStatus('err');
+    updateDmCgRunStatusSpan('❌ 异常');
+    showToast('请求异常: ' + e.message, 'err');
+  }
+  aiBtn.disabled = false;
+  document.getElementById('dm-cg-ai-spinner').style.display = 'none';
+  document.getElementById('dm-cg-ai-text').textContent = '🤖 AI 断言';
+}
+
+// ═══ 压测运行状态 ═══
+let dmStressRunId = null;   // 当前 run_id
+let dmStressReader = null;  // ReadableStream reader（用于 abort）
+let dmStressPaused = false;
+
+async function doDmStressRun() {
+  const yamlBody = document.getElementById('dm-cgyaml-text').value || dmCgYaml;
+  if (!yamlBody) { showToast('YAML 为空', 'err'); return; }
+  dmCgYaml = yamlBody;
+  const btn = document.getElementById('dm-cg-stressrun-btn');
+  if (!btn) return;
+  btn.disabled = true;
+  document.getElementById('dm-cg-stressrun-spinner').style.display = '';
+  document.getElementById('dm-cg-stressrun-text').textContent = '压测中...';
+  openDmCgRunModal();
+  const logEl = document.getElementById('dm-cgrun-log');
+  logEl.textContent = '>>> 开始压测，请等待...\n\n';
+  dmStressRunId = null; dmStressPaused = false;
+  try {
+    const r = await fetch('/api/danmaku/stress/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ yaml_body: yamlBody }),
+    });
+    if (!r.ok) {
+      const txt = await r.text();
+      logEl.textContent += '请求异常 [HTTP ' + r.status + ']: ' + txt.slice(0, 300) + '\n';
+      setDmCgRunStatus('err'); updateDmCgRunStatusSpan('❌ 异常');
+      resetDmStressCtrlBtns();
+    } else {
+      dmStressReader = r.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      while (true) {
+        const { done, value } = await dmStressReader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop() || '';
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const raw = line.slice(6).trim();
+          if (!raw || raw === '[DONE]') continue;
+          let ev;
+          try { ev = JSON.parse(raw); } catch { continue; }
+          // ── run_id ──
+          if (ev.run_id) { dmStressRunId = ev.run_id; showDmStressCtrlBtns(); continue; }
+          // ── error ──
+          if (ev.error) {
+            logEl.textContent += '❌ 错误: ' + ev.error + '\n';
+            setDmCgRunStatus('err'); updateDmCgRunStatusSpan('❌ 异常');
+            resetDmStressCtrlBtns();
+            continue;
+          }
+          // ── cancelled ──
+          if (ev.cancelled) {
+            logEl.textContent += '\n⏹ 压测已终止\n';
+            setDmCgRunStatus('err'); updateDmCgRunStatusSpan('⏹ 已终止');
+            resetDmStressCtrlBtns();
+            continue;
+          }
+          // ── paused ──
+          if (ev.paused) {
+            logEl.textContent += '\n⏸ 压测已暂停...\n';
+            dmStressPaused = true;
+            setDmCgRunStatus('running'); updateDmCgRunStatusSpan('⏸ 已暂停');
+            document.getElementById('dm-cgrun-pause-btn').classList.add('hidden');
+            document.getElementById('dm-cgrun-resume-btn').classList.remove('hidden');
+            continue;
+          }
+          // ── resumed ──
+          if (ev.resumed) {
+            logEl.textContent += '⏵ 压测已恢复\n';
+            dmStressPaused = false;
+            setDmCgRunStatus('running'); updateDmCgRunStatusSpan('▶️ 运行中');
+            document.getElementById('dm-cgrun-pause-btn').classList.remove('hidden');
+            document.getElementById('dm-cgrun-resume-btn').classList.add('hidden');
+            continue;
+          }
+          // ── progress ──
+          if (ev.done != null && ev.item) {
+            const item = ev.item;
+            const m = item.metrics || {};
+            const icon = item.pass ? '✅' : '❌';
+            logEl.textContent += '\n' + '─'.repeat(50) + '\n';
+            logEl.textContent += icon + ' ' + item.name + '\n';
+            logEl.textContent += '  并发:' + item.concurrency + ' 持续:' + item.duration + 's 耗时:' + item.elapsed + 's\n';
+            logEl.textContent += '  请求:' + m.total + ' 成功:' + m.success + ' 失败:' + m.failed + ' 错误率:' + m.error_rate + '\n';
+            logEl.textContent += '  TPS:' + m.tps + ' avg:' + m.avg_rt + 'ms  P50:' + m.p50 + 'ms  P90:' + m.p90 + 'ms  P99:' + m.p99 + 'ms\n';
+            if (item.assertions && item.assertions.length > 0) {
+              logEl.textContent += '  断言:\n';
+              for (const a of item.assertions) {
+                const mk = a.passed ? '✓' : '✗';
+                logEl.textContent += '    ' + mk + ' ' + a.name + ': ' + a.actual + ' ' + a.op + ' ' + a.expected;
+                if (a.reason) logEl.textContent += ' (' + a.reason + ')';
+                logEl.textContent += '\n';
+              }
+            }
+          }
+          // ── summary ──
+          if (ev.done === true) {
+            const allPass = ev.summary && ev.summary.every(function(r2){ return r2.pass; });
+            logEl.textContent += '\n' + (allPass ? '✅ 全部通过' : '❌ 存在失败') + '\n';
+            setDmCgRunStatus(allPass ? 'ok' : 'err');
+            updateDmCgRunStatusSpan(allPass ? '✅ 通过' : '❌ 失败');
+            resetDmStressCtrlBtns();
+          }
+        }
+      }
+      resetDmStressCtrlBtns();
+    }
+  } catch (e) {
+    logEl.textContent += '请求异常: ' + e.message + '\n';
+    setDmCgRunStatus('err'); updateDmCgRunStatusSpan('❌ 异常');
+    resetDmStressCtrlBtns();
+  }
+  dmStressRunId = null; dmStressReader = null;
+  btn.disabled = false;
+  document.getElementById('dm-cg-stressrun-spinner').style.display = 'none';
+  document.getElementById('dm-cg-stressrun-text').textContent = '🚀 执行压测';
+}
+
+// ── 控制按钮显隐 ──
+function showDmStressCtrlBtns() {
+  document.getElementById('dm-cgrun-pause-btn').classList.remove('hidden');
+  document.getElementById('dm-cgrun-stop-btn').classList.remove('hidden');
+  document.getElementById('dm-cgrun-resume-btn').classList.add('hidden');
+}
+function resetDmStressCtrlBtns() {
+  document.getElementById('dm-cgrun-pause-btn').classList.add('hidden');
+  document.getElementById('dm-cgrun-resume-btn').classList.add('hidden');
+  document.getElementById('dm-cgrun-stop-btn').classList.add('hidden');
+}
+
+// ── 终止 ──
+async function doDmStressStop() {
+  if (!dmStressRunId) return;
+  try { await fetch('/api/danmaku/stress/cancel', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({run_id:dmStressRunId}) }); } catch {}
+  // 关闭 SSE reader 让 doDmStressRun 的 while 退出
+  if (dmStressReader) { try { dmStressReader.cancel(); } catch {} }
+}
+
+// ── 暂停 ──
+async function doDmStressPause() {
+  if (!dmStressRunId) return;
+  document.getElementById('dm-cgrun-pause-btn').disabled = true;
+  try { await fetch('/api/danmaku/stress/pause', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({run_id:dmStressRunId}) }); } catch {}
+  document.getElementById('dm-cgrun-pause-btn').disabled = false;
+}
+
+// ── 继续 ──
+async function doDmStressResume() {
+  if (!dmStressRunId) return;
+  document.getElementById('dm-cgrun-resume-btn').disabled = true;
+  try { await fetch('/api/danmaku/stress/resume', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({run_id:dmStressRunId}) }); } catch {}
+  document.getElementById('dm-cgrun-resume-btn').disabled = false;
+}
+
+function openDmCgRunModal() {
+  document.getElementById('dm-cgrun-title').textContent = dmCgSummary || '';
+  document.getElementById('dm-cgrun-log').textContent = '等待开始...';
+  document.getElementById('dm-cgrun-iframe').src = 'about:blank';
+  document.getElementById('dm-cgrun-pane-log').classList.remove('hidden');
+  document.getElementById('dm-cgrun-pane-report').classList.add('hidden');
+  setDmCgRunStatus('running');
+  updateDmCgRunStatusSpan('▶️ 运行中');
+  resetDmStressCtrlBtns();
+  document.getElementById('dm-cgrun-modal').classList.remove('hidden');
+  switchDmCgRunPane('log');
+}
+function closeDmCgRunModal() {
+  // 关闭时自动发送取消（如果正在运行）
+  if (dmStressRunId) {
+    try { fetch('/api/danmaku/stress/cancel', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({run_id:dmStressRunId}) }); } catch {}
+    if (dmStressReader) { try { dmStressReader.cancel(); } catch {} }
+  }
+  dmStressRunId = null; dmStressReader = null;
+  document.getElementById('dm-cgrun-modal').classList.add('hidden');
+}
+function setDmCgRunStatus(cls) {
+  const s = document.getElementById('dm-cgrun-status');
+  s.className = 'dm-cgrun-status ' + cls;
+}
+function updateDmCgRunStatusSpan(t) { document.getElementById('dm-cgrun-status').textContent = t; }
+function switchDmCgRunPane(pane) {
+  ['log','report'].forEach(p => document.getElementById('dm-cgrun-pane-' + p).classList.toggle('hidden', p !== pane));
+  document.querySelectorAll('.dm-cgrun-tab').forEach(t => t.classList.toggle('active', t.dataset.pane === pane));
+}
+
+
+function renderDmWsCategories() {
+  const cats = [...new Set(dmWsAllItems.map(r => r.project_category || '默认'))];
+  const container = document.getElementById('dmws-cat-tabs');
+  container.innerHTML = '<button class="dm-cat-btn active" onclick="filterDmWsCategory(\'\')">全部</button>' +
+    cats.map(c => '<button class="dm-cat-btn" onclick="filterDmWsCategory(\'' + escapeHtml(c) + '\')">' + escapeHtml(c) + '</button>').join('');
+  const sel = document.getElementById('dmws-category');
+  sel.innerHTML = cats.map(c => '<option>' + escapeHtml(c) + '</option>').join('') || '<option>默认</option>';
+}
+
+function filterDmWsCategory(cat) {
+  dmWsActiveCat = cat;
+  document.querySelectorAll('#dmws-cat-tabs .dm-cat-btn').forEach(b => b.classList.toggle('active', b.textContent === (cat || '全部')));
+  renderDmWsProjects();
+}
+
+function renderDmWsProjects() {
+  const list = document.getElementById('dmws-project-list');
+  const filtered = dmWsActiveCat ? dmWsAllItems.filter(r => (r.project_category || '默认') === dmWsActiveCat) : dmWsAllItems;
+  document.getElementById('dmws-count').textContent = '共 ' + filtered.length + ' 个';
+  if (filtered.length === 0) {
+    list.innerHTML = '<div class="dm-empty">暂无WS压测项目</div>';
+    return;
+  }
+  list.innerHTML = filtered.map(r => {
+    const method = r.method || 'POST';
+    const cat = r.project_category || '默认';
+    return '<div class="dm-project-card">' +
+      '<div class="dm-pname">' + escapeHtml(r.project_name) + '</div>' +
+      '<div class="dm-ename">' + escapeHtml(r.endpoint_name) + '</div>' +
+      '<div class="dm-url" title="' + escapeHtml(r.endpoint_url) + '">' + escapeHtml(r.endpoint_url) + '</div>' +
+      '<div class="dm-meta">' +
+        '<span class="dm-method dm-method-' + method + '">' + method + '</span>' +
+        '<span style="font-size:10px;color:#aaa;">' + escapeHtml(cat) + '</span>' +
+        '<span style="font-size:10px;color:#aaa;margin-left:auto;">' + (r.created_at || '') + '</span>' +
+      '</div>' +
+      '<div class="dm-actions">' +
+        '<button onclick="event.stopPropagation();viewDmWsProject(' + r.id + ')">📋 查看</button>' +
+        '<button onclick="event.stopPropagation();runDmWsPerfFor(' + r.id + ', \'' + escapeHtml(r.endpoint_name) + '\')">⚡ 压测</button>' +
+        '<button onclick="event.stopPropagation();editDmWsProject(' + r.id + ')">✏ 编辑</button>' +
+        '<button onclick="event.stopPropagation();deleteDmWsProject(' + r.id + ')" style="color:#ff4d4f;">🗑 删除</button>' +
+      '</div></div>';
+  }).join('');
+}
+
+function showDmWsForm() {
+  dmWsEditingId = null;
+  dmWsViewMode = false;
+  document.getElementById('dmws-form-title').textContent = '📝 新增WS压测项目';
+  document.getElementById('dmws-edit-id').value = '';
+  document.getElementById('dmws-project-name').value = '';
+  document.getElementById('dmws-endpoint-name').value = '';
+  document.getElementById('dmws-url').value = '';
+  document.getElementById('dmws-method').value = 'POST';
+  document.getElementById('dmws-body').value = '';
+  document.getElementById('dmws-new-cat').value = '';
+  document.getElementById('dmws-headers').innerHTML =
+    '<div class="perf-header-item"><input placeholder="Key" value="Content-Type"><input placeholder="Value" value="application/json; charset=utf-8"><button class="btn-remove" onclick="removePerfHeader(this)">×</button></div>';
+  document.getElementById('dmws-save-btn').textContent = '💾 保存';
+  document.getElementById('dmws-save-btn').style.display = '';
+  document.getElementById('dmws-save-btn').onclick = saveDmWsProject;
+  document.getElementById('dmws-cancel-btn').style.display = 'none';
+  document.getElementById('dmws-perf-card').style.display = 'none';
+  _setDmWsFormDisabled(false);
+}
+
+function editDmWsProject(id) {
+  const item = dmWsAllItems.find(r => r.id === id);
+  if (!item) return;
+  dmWsEditingId = id;
+  dmWsViewMode = false;
+  _setDmWsFormDisabled(false);
+  document.getElementById('dmws-form-title').textContent = '✏ 编辑WS项目 (#' + id + ')';
+  document.getElementById('dmws-edit-id').value = id;
+  document.getElementById('dmws-project-name').value = item.project_name || '';
+  document.getElementById('dmws-endpoint-name').value = item.endpoint_name || '';
+  document.getElementById('dmws-url').value = item.endpoint_url || '';
+  document.getElementById('dmws-method').value = item.method || 'POST';
+  document.getElementById('dmws-category').value = item.project_category || '默认';
+  document.getElementById('dmws-body').value = item.body || '';
+  document.getElementById('dmws-new-cat').value = '';
+  let headers = item.headers;
+  if (typeof headers === 'string') { try { headers = JSON.parse(headers); } catch(e) { headers = {}; } }
+  if (headers && typeof headers === 'object' && Object.keys(headers).length > 0) {
+    document.getElementById('dmws-headers').innerHTML = Object.entries(headers).map(([k, v]) =>
+      '<div class="perf-header-item"><input placeholder="Key" value="' + escapeHtml(k) + '"><input placeholder="Value" value="' + escapeHtml(v) + '"><button class="btn-remove" onclick="removePerfHeader(this)">×</button></div>'
+    ).join('');
+  } else {
+    document.getElementById('dmws-headers').innerHTML = '<div class="perf-header-item"><input placeholder="Key"><input placeholder="Value"><button class="btn-remove" onclick="removePerfHeader(this)">×</button></div>';
+  }
+  document.getElementById('dmws-save-btn').textContent = '💾 更新';
+  document.getElementById('dmws-save-btn').onclick = saveDmWsProject;
+  document.getElementById('dmws-cancel-btn').style.display = 'inline-block';
+  document.getElementById('dmws-perf-card').style.display = 'none';
+}
+
+function cancelDmWsEdit() { showDmWsForm(); }
+
+function viewDmWsProject(id) {
+  const item = dmWsAllItems.find(r => r.id === id);
+  if (!item) return;
+  dmWsViewMode = true;
+  dmWsEditingId = null;
+  document.getElementById('dmws-form-title').textContent = '🔒 查看WS项目详情 (#' + id + ')';
+  document.getElementById('dmws-edit-id').value = '';
+  document.getElementById('dmws-project-name').value = item.project_name || '';
+  document.getElementById('dmws-endpoint-name').value = item.endpoint_name || '';
+  document.getElementById('dmws-url').value = item.endpoint_url || '';
+  document.getElementById('dmws-method').value = item.method || 'POST';
+  document.getElementById('dmws-category').value = item.project_category || '默认';
+  document.getElementById('dmws-body').value = item.body || '';
+  document.getElementById('dmws-new-cat').value = '';
+  let headers = item.headers;
+  if (typeof headers === 'string') { try { headers = JSON.parse(headers); } catch(e) { headers = {}; } }
+  if (headers && typeof headers === 'object' && Object.keys(headers).length > 0) {
+    document.getElementById('dmws-headers').innerHTML = Object.entries(headers).map(([k, v]) =>
+      '<div class="perf-header-item"><input placeholder="Key" value="' + escapeHtml(k) + '"><input placeholder="Value" value="' + escapeHtml(v) + '"><span style="display:none;"></span></div>'
+    ).join('');
+  } else {
+    document.getElementById('dmws-headers').innerHTML = '<div class="perf-header-item"><input placeholder="Key" value="-"><input placeholder="Value" value="-"><span style="display:none;"></span></div>';
+  }
+  _setDmWsFormDisabled(true);
+  document.getElementById('dmws-save-btn').style.display = '';
+  document.getElementById('dmws-save-btn').textContent = '🔓 切换到编辑';
+  document.getElementById('dmws-save-btn').onclick = function() { editDmWsProject(id); };
+  document.getElementById('dmws-cancel-btn').textContent = '✕ 关闭';
+  document.getElementById('dmws-cancel-btn').style.display = 'inline-block';
+  document.getElementById('dmws-perf-card').style.display = 'none';
+}
+
+function _setDmWsFormDisabled(disabled) {
+  ['dmws-project-name','dmws-endpoint-name','dmws-url','dmws-method','dmws-body','dmws-new-cat'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = disabled;
+  });
+  document.querySelectorAll('#dmws-headers input').forEach(inp => inp.disabled = disabled);
+  document.querySelectorAll('#dmws-headers .btn-remove').forEach(b => { b.style.display = disabled ? 'none' : ''; });
+  const addBtn = document.querySelector('#dmws-form-title')?.closest('.card')?.querySelector('.btn-outline');
+  if (addBtn) addBtn.style.display = disabled ? 'none' : '';
+}
+
+function addDmWsHeader() {
+  const list = document.getElementById('dmws-headers');
+  const div = document.createElement('div');
+  div.className = 'perf-header-item';
+  div.innerHTML = '<input placeholder="Key"><input placeholder="Value"><button class="btn-remove" onclick="removePerfHeader(this)">×</button>';
+  list.appendChild(div);
+}
+
+function getDmWsHeaders() {
+  const h = {};
+  document.querySelectorAll('#dmws-headers .perf-header-item').forEach(row => {
+    const inputs = row.querySelectorAll('input');
+    if (inputs[0].value.trim()) h[inputs[0].value.trim()] = inputs[1].value;
+  });
+  return h;
+}
+
+async function saveDmWsProject() {
+  if (dmWsViewMode) return;
+  const project_name = document.getElementById('dmws-project-name').value.trim();
+  const endpoint_name = document.getElementById('dmws-endpoint-name').value.trim();
+  const endpoint_url = document.getElementById('dmws-url').value.trim();
+  if (!project_name) { showToast('请输入项目名称', 'err'); return; }
+  if (!endpoint_name) { showToast('请输入接口名称', 'err'); return; }
+  if (!endpoint_url) { showToast('请输入接口地址', 'err'); return; }
+  const newCat = document.getElementById('dmws-new-cat').value.trim();
+  const category = newCat || document.getElementById('dmws-category').value || '默认';
+  const body = {
+    project_name, endpoint_name, endpoint_url,
+    project_category: category,
+    method: document.getElementById('dmws-method').value,
+    headers: getDmWsHeaders(),
+    body: document.getElementById('dmws-body').value.trim()
+  };
+  const id = dmWsEditingId;
+  const url = id ? '/api/danmaku/ws-projects/' + id : '/api/danmaku/ws-projects';
+  const method = id ? 'PUT' : 'POST';
+  try {
+    const resp = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const data = await resp.json();
+    if (data.success) {
+      showToast(id ? '已更新' : '已保存');
+      showDmWsForm();
+      await loadDanmakuWsProjects();
+    } else {
+      showToast(data.error || '保存失败', 'err');
+    }
+  } catch (e) { showToast('保存异常: ' + e.message, 'err'); }
+}
+
+async function deleteDmWsProject(id) {
+  if (!confirm('确定删除该项目？')) return;
+  try {
+    const resp = await fetch('/api/danmaku/ws-projects/' + id, { method: 'DELETE' });
+    const data = await resp.json();
+    if (data.success) { showToast('已删除'); await loadDanmakuWsProjects(); }
+    else { showToast(data.error || '删除失败', 'err'); }
+  } catch (e) { showToast('删除异常: ' + e.message, 'err'); }
+}
+
+// ── 抖音预设 ──
+function presetDmWsDy() {
+  document.getElementById('dmws-url').value = 'https://zs-bjfyl-dy.danmu.hxzdm.com/game/douyin/anchor_register';
+  document.getElementById('dmws-project-name').value = '抖音弹幕登录';
+  document.getElementById('dmws-endpoint-name').value = 'anchor_register';
+  document.getElementById('dmws-method').value = 'POST';
+  document.getElementById('dmws-category').value = '抖音';
+  document.getElementById('dmws-body').value = '{"roomId": 888888}';
+  document.getElementById('dmws-headers').innerHTML =
+    '<div class="perf-header-item"><input placeholder="Key" value="User-Agent"><input placeholder="Value" value="UnityPlayer/2021.3.42f1 (UnityWebRequest/1.0, libcurl/8.6.0-DEV)"><button class="btn-remove" onclick="removePerfHeader(this)">×</button></div>' +
+    '<div class="perf-header-item"><input placeholder="Key" value="Content-Type"><input placeholder="Value" value="application/json; charset=utf-8"><button class="btn-remove" onclick="removePerfHeader(this)">×</button></div>' +
+    '<div class="perf-header-item"><input placeholder="Key" value="X-Unity-Version"><input placeholder="Value" value="2021.3.42f1"><button class="btn-remove" onclick="removePerfHeader(this)">×</button></div>';
+  showToast('已填入抖音预设配置', 'ok');
+}
+
+// ── 快手预设 ──
+function presetDmWsKs() {
+  document.getElementById('dmws-url').value = 'https://zs-bjfyl-dy.danmu.hxzdm.com/game/kuaishou/anchor_register';
+  document.getElementById('dmws-project-name').value = '快手弹幕登录';
+  document.getElementById('dmws-endpoint-name').value = 'anchor_register';
+  document.getElementById('dmws-method').value = 'POST';
+  document.getElementById('dmws-category').value = '快手';
+  document.getElementById('dmws-body').value = '{}';
+  document.getElementById('dmws-headers').innerHTML =
+    '<div class="perf-header-item"><input placeholder="Key" value="User-Agent"><input placeholder="Value" value="UnityPlayer/2021.3.42f1 (UnityWebRequest/1.0, libcurl/8.6.0-DEV)"><button class="btn-remove" onclick="removePerfHeader(this)">×</button></div>' +
+    '<div class="perf-header-item"><input placeholder="Key" value="Content-Type"><input placeholder="Value" value="application/json; charset=utf-8"><button class="btn-remove" onclick="removePerfHeader(this)">×</button></div>' +
+    '<div class="perf-header-item"><input placeholder="Key" value="X-Unity-Version"><input placeholder="Value" value="2021.3.42f1"><button class="btn-remove" onclick="removePerfHeader(this)">×</button></div>';
+  showToast('已填入快手预设配置', 'ok');
+}
+
+function runDmWsPerfFor(id, name) {
+  dmWsCurrentPerfId = id;
+  document.getElementById('dmws-perf-name').textContent = name;
+  document.getElementById('dmws-perf-card').style.display = '';
+  // Reset
+  ['dmws-total','dmws-ok','dmws-failed','dmws-avg','dmws-p50','dmws-p90','dmws-p95','dmws-p99','dmws-min','dmws-max'].forEach(id => {
+    document.getElementById(id).textContent = id.startsWith('dmws-t') ? '-' : '- ms';
+  });
+  ['dmws-login','dmws-ws-conn','dmws-auth','dmws-room'].forEach(id => {
+    document.getElementById(id).textContent = '- ms';
+  });
+  document.getElementById('dmws-tps').innerHTML = '-<span class="unit"> 连接/秒</span>';
+  document.getElementById('dmws-perf-progress').style.display = 'none';
+}
+
+async function runDmWsPerf() {
+  if (!dmWsCurrentPerfId) return;
+  const concurrency = parseInt(document.getElementById('dmws-perf-concurrency').value);
+  const timeout_sec = parseInt(document.getElementById('dmws-perf-timeout').value);
+  const runBtn = document.getElementById('dmws-perf-run-btn');
+  const progDiv = document.getElementById('dmws-perf-progress');
+  const progBar = document.getElementById('dmws-perf-progress-bar');
+
+  runBtn.disabled = true; runBtn.textContent = '⏳ 压测中...';
+  progDiv.style.display = ''; progBar.style.width = '0%';
+
+  const progressTimer = setInterval(() => {
+    const w = parseFloat(progBar.style.width) || 0;
+    if (w < 90) progBar.style.width = (w + 3) + '%';
+  }, 300);
+
+  try {
+    const resp = await fetch('/api/danmaku/ws-perf', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project_id: dmWsCurrentPerfId, concurrency, timeout_sec })
+    });
+    clearInterval(progressTimer);
+    const data = await resp.json();
+    progBar.style.width = '100%';
+    if (data.success) {
+      document.getElementById('dmws-total').textContent = data.total;
+      document.getElementById('dmws-ok').textContent = data.ok;
+      document.getElementById('dmws-failed').textContent = data.failed;
+      document.getElementById('dmws-tps').innerHTML = data.tps + '<span class="unit"> 连接/秒</span>';
+      const l = data.latency || {};
+      document.getElementById('dmws-avg').textContent = l.avg + ' ms';
+      document.getElementById('dmws-p50').textContent = l.p50 + ' ms';
+      document.getElementById('dmws-p90').textContent = l.p90 + ' ms';
+      document.getElementById('dmws-p95').textContent = l.p95 + ' ms';
+      document.getElementById('dmws-p99').textContent = l.p99 + ' ms';
+      document.getElementById('dmws-min').textContent = l.min + ' ms';
+      document.getElementById('dmws-max').textContent = l.max + ' ms';
+      // 阶段延迟
+      const s = data.stage_breakdown || {};
+      const stageMap = { login: 'dmws-login', ws_connect: 'dmws-ws-conn', auth: 'dmws-auth', create_room: 'dmws-room' };
+      for (const [key, elId] of Object.entries(stageMap)) {
+        const info = s[key] || {};
+        document.getElementById(elId).textContent = 'avg:' + (info.avg || 0) + ' / p50:' + (info.p50 || 0) + ' / min:' + (info.min || 0) + ' / max:' + (info.max || 0) + ' ms';
+      }
+    } else {
+      showToast(data.error || '压测失败', 'err');
+    }
+  } catch (e) { clearInterval(progressTimer); showToast('压测异常: ' + e.message, 'err'); }
+  runBtn.disabled = false; runBtn.textContent = '🚀 开始长链接压测';
+}
+
+// ── 工具函数 ──
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+// ── 控制台面板 ──
+let consoleVisible = false;
+let consoleCollapsed = false;
+let consoleContent = '';
+
+function showConsole() {
+  const panel = document.getElementById('console-panel');
+  const body = document.getElementById('console-body');
+  panel.style.display = 'flex';
+  panel.style.maxHeight = '40vh';
+  panel.style.minHeight = '120px';
+  body.style.display = '';
+  consoleVisible = true;
+  consoleCollapsed = false;
+  document.getElementById('console-toggle-btn').textContent = '▲ 收起';
+}
+
+function toggleConsoleCollapse() {
+  const panel = document.getElementById('console-panel');
+  const body = document.getElementById('console-body');
+  const btn = document.getElementById('console-toggle-btn');
+  if (consoleCollapsed) {
+    panel.style.maxHeight = '40vh';
+    panel.style.minHeight = '120px';
+    body.style.display = '';
+    btn.textContent = '▲ 收起';
+    consoleCollapsed = false;
+  } else {
+    panel.style.maxHeight = '36px';
+    panel.style.minHeight = '36px';
+    body.style.display = 'none';
+    btn.textContent = '▼ 展开';
+    consoleCollapsed = true;
+  }
+}
+
+function hideConsole() {
+  // 改为收起而非关闭
+  toggleConsoleCollapse();
+  if (!consoleCollapsed) {
+    // 如果调用hideConsole时面板是收起状态，重新显示
+    showConsole();
+  }
+}
+
+function clearConsole() {
+  consoleContent = '';
+  document.getElementById('console-body').innerHTML = '';
+}
+
+function appendConsole(html) {
+  consoleContent += html;
+  const body = document.getElementById('console-body');
+  body.innerHTML = consoleContent;
+  body.scrollTop = body.scrollHeight;
+  showConsole();
+}
+
+function setConsole(html) {
+  consoleContent = html;
+  const body = document.getElementById('console-body');
+  body.innerHTML = consoleContent;
+  body.scrollTop = 0;
+  showConsole();
+}
+
+function copyConsole() {
+  const body = document.getElementById('console-body');
+  const text = body.innerText || body.textContent;
+  navigator.clipboard.writeText(text).then(() => showToast('日志已复制', 'ok')).catch(() => showToast('复制失败', 'err'));
+}
+
+// ── 控制台拖拽调整高度 ──
+(function() {
+  let dragging = false, startY, startH;
+  const header = document.getElementById('console-header');
+  const panel = document.getElementById('console-panel');
+  // 守卫: 调试控制台面板可能不存在（页面未启用调试面板时）
+  if (!header || !panel) return;
+  header.addEventListener('mousedown', e => {
+    dragging = true; startY = e.clientY; startH = panel.offsetHeight;
+    document.body.style.userSelect = 'none';
+  });
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const newH = Math.max(80, Math.min(startH + startY - e.clientY, window.innerHeight * 0.7));
+    panel.style.maxHeight = panel.style.minHeight = newH + 'px';
+  });
+  document.addEventListener('mouseup', () => {
+    dragging = false; document.body.style.userSelect = '';
+  });
+})();
+
+// ── 页面初始化 ──
+
+
+loadDbConfig();
+loadDbCount();
+
+// ═══════════════════════════════════════
+// 设备管理 Vue3 应用
+// ═══════════════════════════════════════
+let _devicesVueApp = null;
+let _devicesInited = false;
+
+function initDevicesView() {
+  if (_devicesInited) return;
+  // 异步加载视图时 #app-devices 可能尚未插入 DOM，检查后再标记已初始化
+  if (!document.getElementById('app-devices')) return;
+  _devicesInited = true;
+
+  const { createApp, ref, reactive, computed, watch, onMounted, onUnmounted, nextTick } = Vue;
+  const location = window.location;
+
+  _devicesVueApp = createApp({
+    setup() {
+      // ── 设备数据（从后端 API 加载） ──
+      const devices = ref([]);
+      const loading = ref(true);
+      const loadError = ref('');
+
+      const searchText = ref('');
+      const filterType = ref('');
+      const filterStatus = ref('');
+      const filterGroup = ref('');
+      const selectedIds = ref([]);
+      const batchMenuOpen = ref(false);
+      const utilOpen = ref(false);
+      const remoteDevice = ref(null);
+      // ── 弹窗控制（修复：旧版无 el-dialog，缺这些 ref） ──
+      const remoteDialogVisible = ref(false);   // 原版无，需新增
+      const showLogPanel = ref(false);         // 原版无，需新增
+      const sessionInfo = reactive({ session_id: '', codec: 'JPEG q40', fps: 0 });  // 原版无，需新增
+      const remoteLogs = ref([]);              // 原版无，需新增
+      let _frameCount = 0, _lastFpsT = Date.now();
+      function pushLog(text, level='info') {
+        const time = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+        remoteLogs.value.push({ time, text, level });
+        if (remoteLogs.value.length > 200) remoteLogs.value.shift();
+      }
+      // ── 弹窗控制 end ──
+      const perfDevice = ref(null);
+      const alert = reactive({ show: false, msg: '', type: 'warn' });
+      const remoteCanvasW = 400, remoteCanvasH = 750;
+
+      // ECharts 实例引用
+      const miniChartRefs = {};
+      const thumbRefs = {};
+      const remoteCanvasRef = ref(null);
+      const utilChartRef = ref(null);
+      const utilTrendRef = ref(null);
+      const perfFpsRef = ref(null);
+      const perfTempRef = ref(null);
+      const perfCpuRef  = ref(null);  // 修复：模板 devices.html perf-chart 引用了 perfCpuRef
+
+      const setMiniChartRef = (key, el) => { if (el) miniChartRefs[key] = el; };
+      const setThumbRef = (id, el) => { if (el) thumbRefs[id] = el; };
+
+      // 下拉菜单外部点击关闭
+      const closeBatchMenu = (e) => { if (batchMenuOpen.value) batchMenuOpen.value = false; };
+
+      // ── 计算属性 ──
+      const filteredDevices = computed(() => {
+        return devices.value.filter(d => {
+          if (searchText.value) {
+            const kw = searchText.value.toLowerCase();
+            if (!(d.name + d.model + d.serial).toLowerCase().includes(kw)) return false;
+          }
+          if (filterType.value && d.type !== filterType.value) return false;
+          if (filterStatus.value && d.status !== filterStatus.value) return false;
+          if (filterGroup.value && d.group !== filterGroup.value) return false;
+          return true;
+        });
+      });
+
+      const onlineCount = computed(() => devices.value.filter(d => d.status === 'online').length);
+      const busyCount = computed(() => devices.value.filter(d => d.status === 'busy').length);
+      const faultCount = computed(() => devices.value.filter(d => d.status === 'fault').length);
+      const utilRate = computed(() => devices.value.length > 0 ? Math.round(busyCount.value / devices.value.length * 100) : 0);
+      const adbCount = computed(() => devices.value.filter(d => (d.connection || '').toUpperCase() === 'USB').length);
+
+      const statsCards = computed(() => [
+        { key:'all', label:'全部设备', icon:'📱', value: devices.value.length, clickFilter:'', sub: '在线 ' + onlineCount.value + ' 台' },
+        { key:'online', label:'在线设备', icon:'🟢', value: onlineCount.value, clickFilter:'', sub: '空闲可用' },
+        { key:'adb', label:'ADB 连接', icon:'🔌', value: adbCount.value, clickFilter:'', sub: 'USB 真机直连' },
+        { key:'fault', label:'故障告警', icon:'🔴', value: faultCount.value, clickFilter:'', sub: '需排查' },
+        { key:'real', label:'真机', icon:'📲', value: devices.value.filter(d=>d.type==='真机').length, clickFilter:'真机', sub: '物理设备' },
+        { key:'emu', label:'模拟器', icon:'💻', value: devices.value.filter(d=>d.type==='模拟器').length, clickFilter:'模拟器', sub: '虚拟设备' },
+        { key:'android', label:'安卓', icon:'🤖', value: devices.value.filter(d=>d.platform==='Android').length, clickFilter:'', sub: 'Android 设备' },
+        { key:'offline', label:'离线', icon:'⚫', value: devices.value.filter(d=>d.status==='offline').length, clickFilter:'', sub: '需排查' },
+      ]);
+
+      const applyFilters = () => {};
+
+      // ── 迷你图表绘制 ──
+      const drawMiniCharts = () => {
+        Object.entries(miniChartRefs).forEach(([key, el]) => {
+          if (!el) return;
+          let instance = echarts.getInstanceByDom(el);
+          if (!instance) instance = echarts.init(el);
+          const hours = Array.from({length: 24}, (_, i) => i + ':00');
+          const data = Array.from({length: 24}, () => Math.floor(Math.random() * 40 + 10));
+          instance.setOption({
+            grid: { left: 0, right: 0, top: 2, bottom: 2 },
+            xAxis: { show: false, data: hours },
+            yAxis: { show: false, min: 0 },
+            series: [{
+              type: 'line', data, smooth: true, symbol: 'none',
+              lineStyle: { color: '#1a73e8', width: 1.5 },
+              areaStyle: { color: new echarts.graphic.LinearGradient(0,0,0,1,[
+                {offset:0,color:'rgba(26,115,232,.25)'},{offset:1,color:'rgba(26,115,232,.02)'}
+              ])}
+            }]
+          }, { notMerge: true });
+        });
+      };
+
+      // ── 设备缩略图仿真绘制 ──
+      const drawThumbnails = () => {
+        devices.value.forEach(dev => {
+          const canvas = thumbRefs[dev.id];
+          if (!canvas) return;
+          const ctx = canvas.getContext('2d');
+          const w = canvas.width, h = canvas.height;
+          // 背景
+          ctx.fillStyle = dev.status === 'offline' ? '#1a1a2e' :
+            dev.status === 'fault' ? '#3d0000' : '#0a1628';
+          ctx.fillRect(0, 0, w, h);
+          if (dev.status === 'offline') return;
+          // 模拟手机屏幕
+          ctx.fillStyle = '#1e3a5f';
+          ctx.fillRect(4, 10, w - 8, h - 60);
+          // 模拟app内容
+          if (dev.status === 'busy') {
+            ctx.fillStyle = '#27ae60'; ctx.fillRect(12, 20, w - 24, 30);
+            ctx.fillText('🎮 运行中...', 20, 42);
+            ctx.fillStyle = '#3498db'; ctx.fillRect(12, 55, w - 24, 50);
+            ctx.fillStyle = '#e67e22'; ctx.fillRect(12, 110, (w - 24) * .6, 40);
+            ctx.fillText('automating', 20, 135);
+          } else if (dev.status === 'fault') {
+            ctx.fillStyle = '#e74c3c'; ctx.fillRect(12, 30, w - 24, 80);
+            ctx.fillStyle = '#fff'; ctx.font = '14px sans-serif';
+            ctx.fillText('⚠️ ERROR', 18, 75);
+          } else {
+            ctx.fillStyle = '#16213e'; ctx.fillRect(12, 20, w - 24, 30);
+            ctx.fillStyle = '#aaa'; ctx.font = '11px monospace';
+            ctx.fillText(dev.model, 16, 40);
+            ctx.fillStyle = '#2c3e6b'; ctx.fillRect(12, 55, w - 24, 75);
+            ctx.fillStyle = '#5dade2'; ctx.font = '10px sans-serif';
+            ctx.fillText('🟢 待命中', 20, 100);
+          }
+          // 底部模拟导航栏
+          ctx.fillStyle = 'rgba(255,255,255,.1)';
+          ctx.fillRect(4, h - 48, w - 8, 38);
+          ctx.fillStyle = '#aaa'; ctx.font = '8px sans-serif';
+          const icons = ['◁', '○', '□'];
+          icons.forEach((ico, i) => ctx.fillText(ico, 20 + i * 30, h - 25));
+        });
+      };
+
+      // ── 底部利用率图表 ──
+      const drawUtilCharts = () => {
+        if (!utilOpen.value) return;
+        nextTick(() => {
+          // 饼图
+          const el1 = utilChartRef.value;
+          if (el1) {
+            let inst = echarts.getInstanceByDom(el1);
+            if (!inst) inst = echarts.init(el1);
+            inst.setOption({
+              tooltip: { trigger: 'item' },
+              legend: { bottom: 0 },
+              series: [{
+                type: 'pie', radius: ['45%', '78%'], center: ['50%', '48%'],
+                data: [
+                  { value: 420, name: 'AI手游任务' },
+                  { value: 280, name: '普通App自动化' },
+                ],
+                emphasis: { itemStyle: { shadowBlur: 10, shadowOffsetX: 0, shadowColor: 'rgba(0,0,0,.3)' } },
+                itemStyle: { borderRadius: 4, borderColor: '#fff', borderWidth: 2 }
+              }]
+            }, { notMerge: true });
+          }
+          // 趋势线
+          const el2 = utilTrendRef.value;
+          if (el2) {
+            let inst2 = echarts.getInstanceByDom(el2);
+            if (!inst2) inst2 = echarts.init(el2);
+            const days = ['7/08','7/09','7/10','7/11','7/12','7/13','7/14'];
+            inst2.setOption({
+              tooltip: { trigger: 'axis' },
+              legend: { bottom: 0, data: ['手游任务','App自动化'] },
+              xAxis: { type: 'category', data: days },
+              yAxis: { type: 'value', name: '占用(台)' },
+              series: [
+                { name: '手游任务', type: 'line', data: [8,10,12,9,13,14,11], smooth: true, areaStyle: { opacity: .15 }, itemStyle: { color: '#e67e22' } },
+                { name: 'App自动化', type: 'line', data: [4,5,6,7,5,6,7], smooth: true, areaStyle: { opacity: .15 }, itemStyle: { color: '#3498db' } },
+              ]
+            }, { notMerge: true });
+          }
+        });
+      };
+
+      // ── 性能曲线弹窗图表 ──
+      const drawPerfCharts = () => {
+        if (!perfDevice.value) return;
+        nextTick(() => {
+          const t = Array.from({length: 60}, (_, i) => (60 - i) + 's前');
+          const genData = (base, amp) => Array.from({length: 60}, () => Math.max(0, base + (Math.random() - .5) * amp));
+          [
+            { ref: perfFpsRef, name: 'FPS', data: genData(58, 20), color: '#27ae60', max: 70 },
+            { ref: perfTempRef, name: '温度', data: genData(38, 8), color: '#e74c3c', max: 55 },
+          ].forEach(cfg => {
+            const el = cfg.ref.value;
+            if (!el) return;
+            let inst = echarts.getInstanceByDom(el);
+            if (!inst) inst = echarts.init(el);
+            inst.setOption({
+              grid: { left: 40, right: 15, top: 10, bottom: 25 },
+              xAxis: { type: 'category', data: t, axisLabel: { show: false } },
+              yAxis: { type: 'value', min: 0, max: cfg.max },
+              series: [{
+                name: cfg.name, type: 'line', data: cfg.data,
+                smooth: true, symbol: 'none',
+                lineStyle: { color: cfg.color, width: 2 },
+                areaStyle: { color: new echarts.graphic.LinearGradient(0,0,0,1,[
+                  {offset:0,color:cfg.color.replace(')','.3)')},{offset:1,color:cfg.color.replace(')','.02)')}
+                ])}
+              }]
+            }, { notMerge: true });
+          });
+        });
+      };
+
+      // ── 远程控制 WebSocket 投屏 ──
+      const wsScreen = ref(null);
+      const wsStreamTimer = ref(null);
+      const mouseStart = ref(null);
+      const wsFps = ref(0);
+      let _lastFrameTime = 0;
+
+      const _wsSend = (data) => {
+        const ws = wsScreen.value;
+        if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(data));
+      };
+
+      const _renderFrame = (base64) => {
+        nextTick(() => {
+          const canvas = remoteCanvasRef.value;
+          if (!canvas) { console.warn('[Remote] canvas ref null'); return; }
+          const img = new Image();
+          img.onload = () => {
+            const pw = canvas.parentElement.clientWidth || 500;
+            const ph = canvas.parentElement.clientHeight || 750;
+            const maxW = pw - 20;
+            const maxH = ph - 20;
+            const scale = Math.min(maxW / img.width, maxH / img.height, 1);
+            canvas.width = Math.round(img.width * scale);
+            canvas.height = Math.round(img.height * scale);
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            const now = Date.now();
+            if (_lastFrameTime) wsFps.value = Math.round(1000 / (now - _lastFrameTime));
+            _lastFrameTime = now;
+            console.log('[Remote] frame rendered', canvas.width, 'x', canvas.height);
+          };
+          img.onerror = (err) => { console.error('[Remote] img load error:', err); };
+          img.src = 'data:image/jpeg;base64,' + base64;
+        });
+      };
+
+      const drawRemoteScreen = () => {
+        nextTick(() => {
+          const canvas = remoteCanvasRef.value;
+          if (!canvas) return;
+          const ctx = canvas.getContext('2d');
+          const w = canvas.width, h = canvas.height;
+          ctx.fillStyle = '#0a1628'; ctx.fillRect(0, 0, w, h);
+          ctx.fillStyle = '#aaa'; ctx.font = '14px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText('🔗 WS 连接中...', w / 2, h / 2);
+          ctx.textAlign = 'start';
+        });
+      };
+
+      // ── 操作 ──
+      const selectDevice = (dev, e) => {
+        if (e.target.closest('button')) return;
+        if (dev.status === 'offline') return;
+        openRemote(dev);
+      };
+
+      const openRemote = (dev) => {
+        if (dev.status === 'busy' || dev.status === 'offline') {
+          const tip = dev.status === 'busy' ? '设备被占用，仅允许1人远程操作' : '设备离线，无法远程';
+          showAlert(tip, 'err');
+          return;
+        }
+        // 先关旧连接
+        if (wsScreen.value) {
+          try { wsScreen.value.close(); } catch (_) {}
+          wsScreen.value = null;
+        }
+        if (wsStreamTimer.value) { clearInterval(wsStreamTimer.value); wsStreamTimer.value = null; }
+        remoteDevice.value = dev;
+        drawRemoteScreen();
+        // 连接 WebSocket 投屏
+        wsConnecting.value = true; wsConnected.value = false;
+        const wsUrl = `ws://127.0.0.1:8090`;
+        const ws = new WebSocket(wsUrl);
+        wsScreen.value = ws;
+        ws.onopen = () => {
+          console.log('[Remote] WS connected, sending init_device');
+          wsConnecting.value = false; wsConnected.value = true;
+          _wsSend({ action: 'init_device', device_serial: dev.serial });
+          // 启动定时请求帧（每 100ms 请求一帧，约 10 FPS）
+          wsStreamTimer.value = setInterval(() => {
+            if (ws.readyState === WebSocket.OPEN) {
+              _wsSend({ action: 'stream', stream_only: true });
+            }
+          }, 100);
+        };
+        ws.onmessage = (event) => {
+          try {
+            const msg = JSON.parse(event.data);
+            console.log('[Remote] msg keys:', Object.keys(msg).join(', '));
+            if (msg.screen_base64) { console.log('[Remote] frame size:', msg.screen_base64.length); _renderFrame(msg.screen_base64); }
+            if (msg.session_id) { sessionInfo.session_id = msg.session_id; sessionInfo.codec = msg.codec || 'JPEG q40'; }
+            if (msg.fps) { wsFps.value = msg.fps; sessionInfo.fps = msg.fps; }
+            if (msg.log) { pushLog(msg.log, msg.level || 'info'); }
+            if (msg.error) showAlert('ERR ' + msg.error, 'err');
+          } catch (_) { console.error('[Remote] JSON parse error:', _); }
+        };
+        ws.onerror = (e) => { console.error('[Remote] WS error:', e); wsConnecting.value = false; wsConnected.value = false; showAlert('WS connection failed', 'err'); };
+        ws.onclose = (e) => { console.log('[Remote] WS closed:', e.code, e.reason); wsConnecting.value = false; wsConnected.value = false; _lastFrameTime = 0; };
+      };
+      const closeRemote = () => {
+        if (wsStreamTimer.value) { clearInterval(wsStreamTimer.value); wsStreamTimer.value = null; }
+        if (wsScreen.value) {
+          try { wsScreen.value.close(); } catch (_) {}
+          wsScreen.value = null;
+        }
+        remoteDevice.value = null;
+        remoteDialogVisible.value = false;
+        wsConnected.value = false; wsConnecting.value = false;
+        _lastFrameTime = 0;
+      };
+      // ── 修复：缺失的远程控制操作函数 ──
+      const keyMap = { home: 3, back: 4, menu: 82, power: 26, volume_up: 24, volume_down: 25, enter: 66 };
+      const sendKey = (k) => {
+        if (!wsScreen.value || wsScreen.value.readyState !== 1) return;
+        _wsSend({ action: 'key', device_serial: remoteDevice.value?.serial, key: k });
+        pushLog('KEY: ' + k);
+      };
+      const takeScreenshot = () => {
+        const cv = document.querySelector('#app-devices .dm-remote-screen canvas');
+        if (!cv) { showDevicesToast('画面未就绪', 'warn'); return; }
+        const url = cv.toDataURL('image/png');
+        const a = document.createElement('a'); a.href = url; a.download = 'device_' + Date.now() + '.png'; a.click();
+        showDevicesToast('截屏已保存', 'success');
+      };
+      const confirmSendText = () => {
+        if (!wsScreen.value || wsScreen.value.readyState !== 1) { showAlert('未连接', 'err'); return; }
+        if (!textInputValue.value) return;
+        _wsSend({ action: 'input_text', device_serial: remoteDevice.value?.serial, text: textInputValue.value });
+        pushLog('TEXT: ' + textInputValue.value.slice(0, 30));
+        showDevicesToast('已发送', 'success');
+        textInputValue.value = '';
+      };
+      const reconnectWs = () => {
+        if (remoteDevice.value) { closeRemote(); openRemote(remoteDevice.value); }
+      };
+      const releaseAndClose = () => {
+        try { if (wsScreen.value && wsScreen.value.readyState === 1) wsScreen.value.send(JSON.stringify({ action: 'release' })); } catch(e) {}
+        closeRemote();
+      };
+      // ── 修复 end ──
+
+      const openPerfChart = (dev) => {
+        perfDevice.value = dev;
+        nextTick(() => drawPerfCharts());
+      };
+      const closePerfChart = () => { perfDevice.value = null; };
+
+      const remoteAction = (action) => {
+        if (!remoteDevice.value) return;
+        const serial = remoteDevice.value.serial;
+        switch (action) {
+          case 'home':
+            _wsSend({ action: 'key', device_serial: serial, key: 'HOME' });
+            showAlert('🏠 Home 键已发送', 'success');
+            break;
+          case 'back':
+            _wsSend({ action: 'key', device_serial: serial, key: 'BACK' });
+            showAlert('⬅️ 返回键已发送', 'success');
+            break;
+          case 'screenshot': {
+            const canvas = remoteCanvasRef.value;
+            if (canvas) {
+              const link = document.createElement('a');
+              link.download = `screenshot-${serial}-${Date.now()}.png`;
+              link.href = canvas.toDataURL('image/png');
+              link.click();
+              showAlert('📸 截图已保存', 'success');
+            }
+            break;
+          }
+          case 'record':
+            showAlert('⏺️ 录屏功能开发中', 'warn');
+            break;
+          default:
+            showAlert('⚙️ ' + action + ' — 请在设备画面上直接操作', 'warn');
+        }
+      };
+
+      // 画布坐标 → 设备实际坐标
+      const _canvasToDevice = (canvasX, canvasY) => {
+        const canvas = remoteCanvasRef.value;
+        if (!canvas || !(canvas.width && canvas.height)) return null;
+        const dev = remoteDevice.value;
+        if (!dev) return null;
+        const [dw, dh] = (dev.resolution || '1080x1920').split('x').map(Number);
+        if (!dw || !dh) return null;
+        return {
+          x: Math.round(canvasX / canvas.width * dw),
+          y: Math.round(canvasY / canvas.height * dh),
+        };
+      };
+
+      const onRemoteMouseDown = (e) => {
+        if (!remoteDevice.value) return;
+        const canvas = remoteCanvasRef.value;
+        if (!canvas) return;
+        const rect = canvas.getBoundingClientRect();
+        mouseStart.value = {
+          x: e.clientX - rect.left,
+          y: e.clientY - rect.top,
+          time: Date.now(),
+        };
+      };
+
+      const onRemoteMouseUp = (e) => {
+        if (!remoteDevice.value || !mouseStart.value) return;
+        const canvas = remoteCanvasRef.value;
+        if (!canvas) return;
+        const rect = canvas.getBoundingClientRect();
+        const ex = e.clientX - rect.left;
+        const ey = e.clientY - rect.top;
+        const sx = mouseStart.value.x;
+        const sy = mouseStart.value.y;
+        const st = mouseStart.value.time;
+        mouseStart.value = null;
+        const dist = Math.sqrt((ex - sx) ** 2 + (ey - sy) ** 2);
+        const dt = Date.now() - (st || 0);
+        const from = _canvasToDevice(sx, sy);
+        const to = _canvasToDevice(ex, ey);
+        if (!from) return;
+        const serial = remoteDevice.value.serial;
+        if (dist < 10 || dt > 500) {
+          // 点击
+          _wsSend({ action: 'tap', device_serial: serial, x: from.x, y: from.y });
+        } else {
+          // 滑动
+          _wsSend({ action: 'swipe', device_serial: serial,
+            x1: from.x, y1: from.y, x2: to.x, y2: to.y, duration: Math.min(dt, 300) });
+        }
+      };
+
+      const refreshDevices = async () => {
+        loading.value = true;
+        loadError.value = '';
+        try {
+          const resp = await fetch('/api/devices').then(r => r.json());
+          if (resp.code === 0 && resp.data) {
+            devices.value = resp.data;
+            showAlert('✅ 设备列表已刷新 (' + devices.value.length + ' 台)', 'success');
+          } else {
+            loadError.value = resp.msg || '刷新失败';
+            showAlert('❌ ' + loadError.value, 'err');
+          }
+        } catch (e) {
+          loadError.value = '网络错误: ' + e.message;
+          showAlert('❌ 获取设备列表失败: ' + e.message, 'err');
+        }
+        loading.value = false;
+      };
+      const exportExcel = () => { window.open('/api/devices/export'); };
+      const batchOp = async (op) => {
+        batchMenuOpen.value = false;
+        if (selectedIds.value.length === 0) {
+          showAlert('⚠️ 请先选择设备', 'warn'); return;
+        }
+        try {
+          const resp = await fetch('/api/devices/batch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ operation: op, ids: selectedIds.value }),
+          }).then(r => r.json());
+          showAlert(resp.msg, resp.code === 0 ? 'success' : 'err');
+          if (resp.code === 0) selectedIds.value = [];
+        } catch (e) {
+          showAlert('❌ 批量操作失败: ' + e.message, 'err');
+        }
+      };
+
+      const showAlert = (msg, type) => {
+        alert.msg = msg; alert.type = type || 'warn'; alert.show = true;
+        setTimeout(() => { alert.show = false; }, 3000);
+      };
+
+      // ── 导航到其他页签 ──
+      const navTo = (page) => {
+        _devicesInited = false;
+        switchPage(page);
+      };
+
+      // ── 生命周期 ──
+      onMounted(async () => {
+        // 从后端 API 加载设备数据
+        remoteDevice.value = null;
+        perfDevice.value = null;
+        loading.value = true;
+        loadError.value = '';
+        try {
+          const resp = await fetch('/api/devices').then(r => r.json());
+          if (resp.code === 0 && resp.data && resp.data.length > 0) {
+            devices.value = resp.data;
+            console.log('[Devices] 加载成功: ' + devices.value.length + ' 台');
+          } else {
+            loadError.value = resp.msg || '后端无设备数据';
+            console.warn('[Devices] API 返回异常或无数据');
+          }
+        } catch (e) {
+          loadError.value = '无法连接后端: ' + e.message;
+          console.error('[Devices] 加载失败: ' + e.message);
+        }
+        loading.value = false;
+        nextTick(() => {
+          drawMiniCharts();
+          drawThumbnails();
+          // 调整 ECharts 尺寸
+          Object.values(miniChartRefs).forEach(el => {
+            const inst = el && echarts.getInstanceByDom(el);
+            if (inst) inst.resize();
+          });
+        });
+        // 监听窗口大小变化重绘
+        window.addEventListener('resize', onResize);
+      });
+
+      const onResize = () => {
+        Object.values(miniChartRefs).forEach(el => {
+          const inst = el && echarts.getInstanceByDom(el);
+          if (inst) inst.resize();
+        });
+        [utilChartRef, utilTrendRef, perfFpsRef, perfTempRef].forEach(ref => {
+          const el = ref.value;
+          const inst = el && echarts.getInstanceByDom(el);
+          if (inst) inst.resize();
+        });
+      };
+
+      // 监听 utilOpen 变化
+      watch(utilOpen, (v) => { if (v) drawUtilCharts(); });
+      watch(perfDevice, (v) => { if (v) drawPerfCharts(); });
+      watch(remoteDevice, (v) => { if (v) drawRemoteScreen(); });
+      // 修复：remoteDevice 变化时同步打开/关闭 el-dialog
+      watch(remoteDevice, (v) => { remoteDialogVisible.value = (v !== null); });
+
+      onUnmounted(() => {
+        window.removeEventListener('resize', onResize);
+        if (wsStreamTimer.value) { clearInterval(wsStreamTimer.value); wsStreamTimer.value = null; }
+        if (wsScreen.value) {
+          try { wsScreen.value.close(); } catch (_) {}
+          wsScreen.value = null;
+        }
+      });
+
+      // ── 补丁：补充 devices.html 模板用到的 ref/function 别名 ──
+      // devices.html 是新版页面，原本只期望在新版 SPA 中使用，
+      // 旧版 initDevicesView() 缺少 toast / syncing / wsConnected 等实现。
+      // 这里添加别名/存根以让旧版也能渲染该模板，不破坏现有逻辑。
+
+      const toast = reactive({ show: false, msg: '', type: 'success' });
+      const showDevicesToast = (msg, type='success', dur=2200) => {
+        toast.msg = msg; toast.type = type; toast.show = true;
+        setTimeout(() => { toast.show = false; }, dur);
+      };
+      const syncing = ref(false);
+      const onlySelected = ref(false);
+      const wsConnected = ref(false);
+      const wsConnecting = ref(false);
+      const remoteTool = ref('tap');
+      const textInputShow = ref(false);
+      const textInputValue = ref('');
+
+      const refreshAll = refreshDevices;
+      const exportDevices = exportExcel;
+      const openPerf = openPerfChart;
+      const closePerf = closePerfChart;
+      const onMouseDown = onRemoteMouseDown;
+      const onMouseUp = onRemoteMouseUp;
+      const onMouseMove = () => { /* 滑动中实时跟踪（暂不需要） */ };
+
+      const clearSelection = () => { selectedIds.value = []; onlySelected.value = false; };
+
+      // devices.html 模板用到的辅助函数
+      const badgeClass = (dev) => {
+        if (!dev) return 'unknown';
+        const t = (dev.type || '').toLowerCase();
+        if (t.includes('模拟器') || t === 'emu' || t === 'emulator') return 'emu';
+        if (t.includes('真机') || t === 'real' || t === 'mobile') return 'mobile';
+        if (t.includes('虚机') || t === 'vm') return 'vm';
+        return 'other';
+      };
+      const statusText = (s) => {
+        const map = { online: '在线', busy: '占用中', fault: '故障', offline: '离线', idle: '空闲' };
+        return map[s] || (s || '未知');
+      };
+      const toggleSelect = (dev) => {
+        const idx = selectedIds.value.indexOf(dev.id);
+        if (idx >= 0) selectedIds.value.splice(idx, 1);
+        else selectedIds.value.push(dev.id);
+      };
+      const isSelected = (id) => selectedIds.value.includes(id);
+      const onStatClick = () => { showDevicesToast('请使用页面上方的筛选下拉', 'warn'); };
+
+      const syncAdbDevices = async () => {
+        syncing.value = true;
+        try {
+          const r = await fetch('/api/devices/sync-adb', { method: 'POST' }).then(r => r.json());
+          showDevicesToast(r.msg || (r.code === 0 ? '同步完成' : '同步失败'), r.code === 0 ? 'success' : 'err');
+          if (r.code === 0) await refreshAll();
+        } catch (e) {
+          showDevicesToast('同步失败: ' + e.message, 'err');
+        } finally {
+          syncing.value = false;
+        }
+      };
+
+      // takeScreenshot / sendKey / confirmSendText 已在上方（keyMap 版本）定义，此处仅保留 sendText
+      const sendText = () => { textInputShow.value = true; };
+
+      return {
+        devices, loading, loadError, filteredDevices, searchText, filterType, filterStatus, filterGroup,
+        selectedIds, batchMenuOpen, utilOpen, remoteDevice, perfDevice, alert,
+        remoteCanvasW, remoteCanvasH, remoteCanvasRef, utilChartRef, utilTrendRef,
+        perfFpsRef, perfTempRef, perfCpuRef,
+        statsCards, onlineCount, busyCount, faultCount, adbCount, utilRate,
+        setMiniChartRef, setThumbRef, closeBatchMenu,
+        applyFilters, navTo, selectDevice,
+        openRemote, closeRemote, openPerfChart, closePerfChart,
+        remoteAction, refreshDevices, exportExcel, batchOp,
+        onRemoteMouseDown, onRemoteMouseUp, wsFps,
+        // 补丁：补充 devices.html 模板所需的所有 ref / 方法
+        toast, syncing, onlySelected,
+        wsConnected, wsConnecting, remoteDialogVisible, showLogPanel, sessionInfo, remoteLogs, pushLog, releaseAndClose,
+        remoteTool, textInputShow, textInputValue,
+        refreshAll, exportDevices, openPerf, closePerf,
+        onMouseDown, onMouseMove, onMouseUp,
+        clearSelection, toggleSelect, isSelected, onStatClick,
+        syncAdbDevices, reconnectWs, takeScreenshot, sendKey, sendText, confirmSendText,
+        // 辅助函数
+        badgeClass, statusText,
+        location,  // 暴露给模板使用
+      };
+    }
+  });
+
+  // 补丁：注册 Element Plus 让 el-radio-button / el-dialog / el-input 等可用
+  if (typeof ElementPlus !== 'undefined') {
+    _devicesVueApp.use(ElementPlus);
+  }
+
+  // v-click-outside 自定义指令
+  _devicesVueApp.directive('click-outside', {
+    mounted(el, binding) {
+      el.__clickOutside = (e) => {
+        if (!(el === e.target || el.contains(e.target))) binding.value(e);
+      };
+      document.addEventListener('click', el.__clickOutside);
+    },
+    unmounted(el) {
+      document.removeEventListener('click', el.__clickOutside);
+    },
+  });
+
+  _devicesVueApp.mount('#app-devices');
+}
+
+</script>
+</body>
+</html>

@@ -80,6 +80,34 @@ def api_db_records():
             return jsonify({"success": False, "error": str(e2)}), 500
 
 
+@db_bp.route("/api/db/records/count", methods=["GET"])
+def api_db_records_count():
+    """查询用例总数和今日执行数"""
+    try:
+        mysql_conn = get_db_conn()
+        try:
+            with mysql_conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*) AS total FROM test_yaml_cases")
+                row = cur.fetchone()
+                total = row["total"] if isinstance(row, dict) else row[0]
+                cur.execute(
+                    "SELECT COUNT(*) AS today FROM test_yaml_cases "
+                    "WHERE DATE(created_at) = CURDATE()"
+                )
+                row = cur.fetchone()
+                today = row["today"] if isinstance(row, dict) else row[0]
+            return jsonify({"success": True, "count": total, "today": today})
+        finally:
+            mysql_conn.close()
+    except Exception as e:
+        try:
+            with _get_db() as conn:
+                total = conn.execute("SELECT COUNT(*) FROM test_cases").fetchone()[0]
+            return jsonify({"success": True, "count": total, "today": "--"})
+        except Exception as e2:
+            return jsonify({"success": False, "error": str(e2)}), 500
+
+
 @db_bp.route("/api/db/records/<int:record_id>/keep-flag", methods=["PUT"])
 def api_toggle_keep_flag(record_id):
     """切换 keep_flag 状态 (0↔1)"""

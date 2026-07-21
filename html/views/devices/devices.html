@@ -1,0 +1,327 @@
+<div id="app-devices" class="dm-page">
+
+  <!-- Toast -->
+  <transition name="dm-fade">
+    <div v-if="toast.show" :class="['dm-toast', 'dm-toast-' + toast.type]">{{ toast.msg }}</div>
+  </transition>
+
+  <!-- Header -->
+  <div class="dm-page-header">
+    <div>
+      <h2>设备管理</h2>
+      <p class="dm-page-desc">手游设备分组管理 / 远程投屏 / 性能监控</p>
+    </div>
+    <div class="dm-toolbar">
+      <el-button size="small" :loading="syncing" @click="syncAdbDevices">ADB 同步</el-button>
+      <el-button size="small" @click="refreshAll">刷新</el-button>
+      <el-button size="small" @click="exportDevices">导出 CSV</el-button>
+      <el-popover v-model="batchMenuOpen" placement="bottom-end" :width="180" trigger="click">
+        <div class="dm-batch-menu">
+          <div class="dm-batch-item" @click="batchOp('reboot')">重启设备</div>
+          <div class="dm-batch-item" @click="batchOp('screenshot')">批量截屏</div>
+          <div class="dm-batch-item" @click="batchOp('install_app')">安装 App</div>
+          <div class="dm-batch-item" @click="batchOp('clear_data')">清理数据</div>
+          <div class="dm-batch-item" @click="batchOp('wake')">唤醒屏幕</div>
+        </div>
+        <el-button slot="reference" size="small" type="primary" :disabled="selectedIds.length===0">
+          批量运维 ({{ selectedIds.length }})
+        </el-button>
+      </el-popover>
+    </div>
+  </div>
+
+  <!-- Loading / Error -->
+  <div v-if="loading" class="dm-state">
+    <div class="dm-state-icon">...</div>
+    <div>设备数据加载中</div>
+  </div>
+  <div v-else-if="loadError" class="dm-state">
+    <div class="dm-state-icon">!</div>
+    <div>{{ loadError }}</div>
+    <el-button size="small" type="primary" @click="refreshAll" style="margin-top:12px">重试</el-button>
+  </div>
+
+  <template v-if="!loading && !loadError">
+
+  <!-- Search & filter bar -->
+  <div class="dm-card dm-search-bar">
+    <el-input v-model="searchText" placeholder="搜索机型 / 序列号" size="small" style="width:220px" clearable @input="applyFilters"/>
+    <el-select v-model="filterType" placeholder="类型" size="small" style="width:110px" clearable @change="applyFilters">
+      <el-option label="真机" value="真机"/>
+      <el-option label="模拟器" value="模拟器"/>
+      <el-option label="鸿蒙真机" value="鸿蒙真机"/>
+    </el-select>
+    <el-select v-model="filterStatus" placeholder="状态" size="small" style="width:120px" clearable @change="applyFilters">
+      <el-option label="在线空闲" value="online"/>
+      <el-option label="任务占用" value="busy"/>
+      <el-option label="离线" value="offline"/>
+      <el-option label="故障告警" value="fault"/>
+    </el-select>
+    <el-select v-model="filterGroup" placeholder="分组" size="small" style="width:130px" clearable @change="applyFilters">
+      <el-option label="手游专用组" value="手游专用组"/>
+      <el-option label="普通测试组" value="普通测试组"/>
+      <el-option label="模拟器组" value="模拟器组"/>
+    </el-select>
+    <el-checkbox v-model="onlySelected" :disabled="selectedIds.length===0" style="margin-left:8px">
+      仅看已选 ({{ selectedIds.length }})
+    </el-checkbox>
+    <div class="dm-search-spacer"></div>
+    <el-button v-if="selectedIds.length>0" size="small" text @click="clearSelection">清空选择</el-button>
+    <span class="dm-count">{{ filteredDevices.length }} / {{ devices.length }} 台</span>
+  </div>
+
+  <!-- Stats cards -->
+  <div class="dm-stats-grid">
+    <div v-for="s in statsCards" :key="s.key" class="dm-stat-card" :data-stat-key="s.key" @click="onStatClick(s)">
+      <div class="dm-stat-top">
+        <span class="dm-stat-label">{{ s.label }}</span>
+        <span class="dm-stat-icon">{{ s.icon }}</span>
+      </div>
+      <div class="dm-stat-value">{{ s.value }}</div>
+      <div class="dm-mini-chart"></div>
+      <div class="dm-stat-sub">{{ s.sub }}</div>
+    </div>
+  </div>
+
+  <!-- Utilization panel (collapsible) -->
+  <div class="dm-card dm-util-card">
+    <div class="dm-util-head" @click="utilOpen = !utilOpen">
+      <strong>设备利用率大盘</strong>
+      <span class="dm-util-rate">当前利用率: <b :class="utilRate > 50 ? 'high' : utilRate > 20 ? 'mid' : 'low'">{{ utilRate }}%</b></span>
+      <span class="dm-util-toggle">{{ utilOpen ? '收起' : '展开' }}</span>
+    </div>
+    <div v-show="utilOpen" class="dm-util-body">
+      <div data-util-pie class="dm-util-pie"></div>
+      <div data-util-trend class="dm-util-trend"></div>
+    </div>
+  </div>
+
+  <!-- Device grid -->
+  <div class="dm-device-grid">
+    <div v-for="dev in filteredDevices" :key="dev.id"
+      :class="['dm-card', 'dm-device-card', 'dm-status-' + dev.status]">
+      <div class="dm-device-checkbox" @click.stop="toggleSelect(dev)">
+        <el-checkbox :value="isSelected(dev.id)" @change="toggleSelect(dev)"/>
+      </div>
+
+      <!-- Thumbnail (real screenshot if available) -->
+      <div class="dm-device-thumb">
+        <img v-if="dev.thumb" :src="dev.thumb" :alt="dev.name" loading="lazy" @error="$event.target.style.display='none'"/>
+        <div v-else class="dm-device-thumb-placeholder" :class="'dm-thumb-' + dev.status">
+          <div class="dm-thumb-frame"></div>
+          <div class="dm-thumb-label">{{ dev.name }}</div>
+        </div>
+        <div v-if="dev.status==='busy'" class="dm-device-thumb-badge">运行中</div>
+        <div v-if="dev.status==='fault'" class="dm-device-thumb-badge dm-badge-fault">告警</div>
+      </div>
+
+      <!-- Info -->
+      <div class="dm-device-info">
+        <div class="dm-device-row1">
+          <span :class="['pulse-dot', dev.status]"></span>
+          <strong class="dm-device-name">{{ dev.name }}</strong>
+          <el-tag size="small" :type="badgeClass(dev) === 'mobile' ? 'warning' : badgeClass(dev) === 'emu' ? 'info' : 'info'" effect="plain">
+            {{ dev.group }}
+          </el-tag>
+        </div>
+        <div class="dm-device-row2">{{ dev.model }} · {{ dev.os }} · {{ dev.resolution }}</div>
+        <div class="dm-device-row3">
+          <span>SN: {{ dev.serial }}</span>
+          <span>{{ dev.connection }}</span>
+          <el-tag size="small" :type="dev.status==='online' ? 'success' : dev.status==='busy' ? 'warning' : dev.status==='fault' ? 'danger' : 'info'">
+            {{ statusText(dev.status) }}
+          </el-tag>
+        </div>
+        <div class="dm-device-row4">
+          <span :class="{warn: dev.temp > 42}">T {{ dev.temp }}°C</span>
+          <span :class="{warn: dev.fps < 30 && dev.fps > 0}">FPS {{ dev.fps }}</span>
+          <span :class="{warn: dev.cpu > 80}">CPU {{ dev.cpu }}%</span>
+        </div>
+        <div class="dm-device-actions">
+          <el-button size="small" type="primary" @click="openRemote(dev)" :disabled="dev.status==='offline'">远程控制</el-button>
+          <el-button size="small" @click="openPerf(dev)" :disabled="dev.status==='offline'">性能曲线</el-button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div v-if="filteredDevices.length===0" class="dm-state">
+    <div class="dm-state-icon">---</div>
+    <div>暂无匹配设备</div>
+  </div>
+
+  </template>
+
+  <!-- Remote control dialog (scrcpy-style) -->
+  <el-dialog v-model="remoteDialogVisible" width="900px" top="3vh" :show-close="false" :close-on-click-modal="false" custom-class="dm-remote-dialog" @close="closeRemote">
+    <div v-if="remoteDevice" class="dm-remote">
+      <!-- 头部工具栏 -->
+      <div class="dm-remote-head">
+        <div class="dm-remote-head-left">
+          <span class="dm-remote-devname">{{ remoteDevice.name }}</span>
+          <el-tag v-if="wsConnecting" size="mini" type="warning" effect="plain">
+            <span class="dm-dot dm-dot-wait"></span>连接中
+          </el-tag>
+          <el-tag v-else-if="wsConnected" size="mini" type="success" effect="plain">
+            <span class="dm-dot dm-dot-on"></span>已连接 · {{ wsFps }} FPS
+          </el-tag>
+          <el-tag v-else size="mini" type="danger" effect="plain">
+            <span class="dm-dot dm-dot-off"></span>未连接
+          </el-tag>
+        </div>
+        <div class="dm-remote-head-right">
+          <el-button size="mini" @click="showLogPanel = !showLogPanel" icon="el-icon-document">日志</el-button>
+          <el-button size="mini" @click="takeScreenshot" :disabled="!wsConnected" icon="el-icon-camera">截图</el-button>
+          <el-button size="mini" @click="reconnectWs" :disabled="wsConnecting" icon="el-icon-refresh">重连</el-button>
+          <el-button size="mini" @click="releaseAndClose" icon="el-icon-switch-button">释放并关闭</el-button>
+        </div>
+      </div>
+
+      <!-- 主体：左侧画面 + 右侧侧栏 -->
+      <div class="dm-remote-body">
+        <div class="dm-remote-screen">
+          <canvas ref="remoteCanvasRef" :width="remoteCanvasW" :height="remoteCanvasH"
+            @mousedown="onMouseDown" @mousemove="onMouseMove" @mouseup="onMouseUp"
+            @touchstart.prevent="onMouseDown" @touchmove.prevent="onMouseMove" @touchend.prevent="onMouseUp"></canvas>
+          <!-- 连接中遮罩 -->
+          <div v-if="!wsConnected" class="dm-remote-overlay">
+            <div class="dm-remote-overlay-inner">
+              <div class="dm-spinner"></div>
+              <div v-if="wsConnecting" class="dm-overlay-title">连接中...</div>
+              <div v-else class="dm-overlay-title">未连接</div>
+              <div class="dm-overlay-sub">{{ wsConnecting ? '正在建立投屏连接，请稍候...' : '点击「重连」尝试恢复' }}</div>
+              <div class="dm-overlay-host">ws://{{ location.hostname }}:8090/</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="dm-remote-side">
+          <!-- 导航 -->
+          <div class="dm-side-block">
+            <div class="dm-side-title">导航</div>
+            <div class="dm-nav-grid">
+              <button class="dm-nav-btn" @click="sendKey('back')" :disabled="!wsConnected" title="返回">
+                <span class="dm-nav-icon">&#x21B6;</span>
+                <span class="dm-nav-label">返回</span>
+              </button>
+              <button class="dm-nav-btn" @click="sendKey('home')" :disabled="!wsConnected" title="主页">
+                <span class="dm-nav-icon dm-nav-icon-home"></span>
+                <span class="dm-nav-label">主页</span>
+              </button>
+              <button class="dm-nav-btn" @click="sendKey('menu')" :disabled="!wsConnected" title="多任务">
+                <span class="dm-nav-icon dm-nav-icon-recents"></span>
+                <span class="dm-nav-label">多任务</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- 文本注入（支持中文） -->
+          <div class="dm-side-block">
+            <div class="dm-side-title">文本注入<span class="dm-side-sub">（支持中文）</span></div>
+            <el-input v-model="textInputValue" type="textarea" :rows="3" placeholder="输入文本，点击注入后在设备当前输入框自动粘贴" resize="none"/>
+            <el-button class="dm-inject-btn" type="success" :disabled="!wsConnected || !textInputValue" @click="confirmSendText">
+              <span class="dm-inject-icon">&#x1F4CB;</span> 注入到设备
+            </el-button>
+            <div class="dm-side-hint">经 SET_CLIPBOARD(paste=true) 写入设备剪贴板并粘贴，需设备当前输入焦点。</div>
+          </div>
+
+          <!-- 设备信息 -->
+          <div class="dm-side-block">
+            <div class="dm-side-title">设备信息</div>
+            <div class="dm-meta-row"><span class="dm-meta-k">型号</span><span class="dm-meta-v">{{ remoteDevice.model || '--' }}</span></div>
+            <div class="dm-meta-row"><span class="dm-meta-k">系统</span><span class="dm-meta-v">{{ remoteDevice.os || '--' }}</span></div>
+            <div class="dm-meta-row"><span class="dm-meta-k">分辨率</span><span class="dm-meta-v">{{ remoteDevice.resolution || '--' }}</span></div>
+            <div class="dm-meta-row"><span class="dm-meta-k">连接</span><span class="dm-meta-v">{{ remoteDevice.connection || '--' }}</span></div>
+          </div>
+
+          <!-- 会话 -->
+          <div class="dm-side-block">
+            <div class="dm-side-title">会话</div>
+            <div class="dm-meta-row"><span class="dm-meta-k">Session</span><span class="dm-meta-v dm-mono">{{ sessionInfo.session_id || '--' }}</span></div>
+            <div class="dm-meta-row"><span class="dm-meta-k">编码</span><span class="dm-meta-v">{{ sessionInfo.codec || 'JPEG q40' }}</span></div>
+            <div class="dm-meta-row"><span class="dm-meta-k">帧率</span><span class="dm-meta-v">{{ sessionInfo.fps || wsFps }} FPS</span></div>
+          </div>
+
+          <!-- 操作工具 -->
+          <div class="dm-side-block">
+            <div class="dm-side-title">操作工具</div>
+            <el-radio-group v-model="remoteTool" size="small">
+              <el-radio-button label="tap">点击</el-radio-button>
+              <el-radio-button label="swipe">滑动</el-radio-button>
+            </el-radio-group>
+          </div>
+        </div>
+      </div>
+
+      <!-- 可选日志面板 -->
+      <div v-if="showLogPanel" class="dm-remote-log">
+        <div class="dm-log-head">实时日志 <el-button size="mini" type="text" @click="showLogPanel=false">关闭</el-button></div>
+        <div class="dm-log-body">
+          <div v-for="(log, i) in remoteLogs" :key="i" :class="['dm-log-line', log.level]">[{{ log.time }}] {{ log.text }}</div>
+          <div v-if="!remoteLogs.length" class="dm-log-empty">暂无日志</div>
+        </div>
+      </div>
+    </div>
+  </el-dialog>
+
+  <!-- Text input dialog -->
+  <el-dialog :visible.sync="textInputShow" title="输入文本" width="420px" append-to-body>
+    <el-input v-model="textInputValue" type="textarea" :rows="3" placeholder="要发送到设备的文本内容"/>
+    <span slot="footer">
+      <el-button @click="textInputShow=false">取消</el-button>
+      <el-button type="primary" @click="confirmSendText">发送</el-button>
+    </span>
+  </el-dialog>
+
+  <!-- Performance dialog -->
+  <el-dialog :visible.sync="perfDevice!==null" :title="'性能监控 - ' + (perfDevice?.name || '')" width="700px" top="6vh" @close="closePerf">
+    <div v-if="perfDevice" class="dm-perf">
+      <div ref="perfFpsRef"  class="dm-perf-chart"></div>
+      <div ref="perfTempRef" class="dm-perf-chart"></div>
+      <div ref="perfCpuRef"  class="dm-perf-chart"></div>
+    </div>
+  </el-dialog>
+
+  <el-dialog v-model="remoteDialogVisible" width="900px" top="3vh"
+           :show-close="false" :close-on-click-modal="false"
+           custom-class="dm-remote-dialog" @close="closeRemote">
+    <div v-if="remoteDevice" class="dm-remote">
+      <div class="dm-remote-head">
+        <span class="dm-remote-devname">{{ remoteDevice.name }}</span>
+        <el-tag v-if="wsConnecting" type="warning">连接中</el-tag>
+        <el-tag v-else-if="wsConnected" type="success">已连接 · {{ wsFps }} FPS</el-tag>
+        <el-tag v-else type="danger">未连接</el-tag>
+        <el-button size="mini" @click="takeScreenshot">截图</el-button>
+        <el-button size="mini" @click="reconnectWs">重连</el-button>
+        <el-button size="mini" @click="releaseAndClose">释放并关闭</el-button>
+      </div>
+      <div class="dm-remote-body">
+        <div class="dm-remote-screen">
+          <canvas :width="remoteCanvasW" :height="remoteCanvasH"
+                  @mousedown="onMouseDown" @mousemove="onMouseMove" @mouseup="onMouseUp"></canvas>
+          <div v-if="!wsConnected" class="dm-remote-overlay">
+            <div class="dm-spinner"></div>
+            <div>{{ wsConnecting ? '连接中...' : '未连接' }}</div>
+          </div>
+        </div>
+        <div class="dm-remote-side">
+          <div class="dm-side-block">
+            <div class="dm-side-title">导航</div>
+            <el-button @click="sendKey('back')">返回</el-button>
+            <el-button @click="sendKey('home')">主页</el-button>
+            <el-button @click="sendKey('menu')">多任务</el-button>
+          </div>
+          <div class="dm-side-block">
+            <el-input v-model="textInputValue" type="textarea" :rows="3" placeholder="输入文本" />
+            <el-button type="success" :disabled="!wsConnected || !textInputValue" @click="confirmSendText">注入到设备</el-button>
+          </div>
+          <div class="dm-side-block">
+            <div>Session: <span class="dm-mono">{{ sessionInfo.session_id || '--' }}</span></div>
+            <div>编码: {{ sessionInfo.codec || 'JPEG q40' }}</div>
+            <div>帧率: {{ wsFps }} FPS</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </el-dialog>
+
+</div>
